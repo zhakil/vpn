@@ -1,0 +1,314 @@
+version: '3.8'
+
+services:
+  # Nginx反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: proxy-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # API网关
+  api-gateway:
+    image: proxy-manager/api-gateway:latest
+    container_name: proxy-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./configs/api-gateway:/app/config:ro
+      - api_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # 规则引擎服务
+  rule-engine:
+    image: proxy-manager/rule-engine:latest
+    container_name: proxy-rule-engine
+    ports:
+      - "8081:8081"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./configs/rule-engine:/app/config:ro
+      - rule_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # 配置管理服务
+  config-manager:
+    image: proxy-manager/config-manager:latest
+    container_name: proxy-config-manager
+    ports:
+      - "8082:8082"
+    environment:
+      - DB_HOST=postgres
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./configs/config-manager:/app/config:ro
+      - ./protocols:/app/protocols
+      - config_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # V2Ray适配器
+  v2ray-adapter:
+    image: proxy-manager/v2ray-adapter:latest
+    container_name: proxy-v2ray-adapter
+    ports:
+      - "8083:8083"
+    environment:
+      - CONFIG_API_URL=http://config-manager:8082
+      - RULE_API_URL=http://rule-engine:8081
+    volumes:
+      - ./configs/v2ray:/app/v2ray-configs
+      - v2ray_logs:/app/logs
+    depends_on:
+      - config-manager
+      - rule-engine
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Clash适配器
+  clash-adapter:
+    image: proxy-manager/clash-adapter:latest
+    container_name: proxy-clash-adapter
+    ports:
+      - "8084:8084"
+    environment:
+      - CONFIG_API_URL=http://config-manager:8082
+      - RULE_API_URL=http://rule-engine:8081
+    volumes:
+      - ./configs/clash:/app/clash-configs
+      - clash_logs:/app/logs
+    depends_on:
+      - config-manager
+      - rule-engine
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Hysteria适配器
+  hysteria-adapter:
+    image: proxy-manager/hysteria-adapter:latest
+    container_name: proxy-hysteria-adapter
+    ports:
+      - "8085:8085"
+    environment:
+      - CONFIG_API_URL=http://config-manager:8082
+      - RULE_API_URL=http://rule-engine:8081
+    volumes:
+      - ./configs/hysteria:/app/hysteria-configs
+      - hysteria_logs:/app/logs
+    depends_on:
+      - config-manager  
+      - rule-engine
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # V2Ray实例
+  v2ray-instance:
+    image: v2fly/v2fly-core:latest
+    container_name: proxy-v2ray-instance
+    ports:
+      - "10001-10010:10001-10010"
+    volumes:
+      - ./configs/v2ray:/etc/v2ray:ro
+      - v2ray_instance_logs:/var/log/v2ray
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Clash实例
+  clash-instance:
+    image: ghcr.io/metacubex/mihomo:latest
+    container_name: proxy-clash-instance
+    ports:
+      - "7890:7890"
+      - "7891:7891"
+      - "9090:9090"
+    volumes:
+      - ./configs/clash:/root/.config/mihomo:ro
+      - clash_instance_logs:/var/log/clash
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # 监控统计服务
+  stats-service:
+    image: proxy-manager/stats-service:latest
+    container_name: proxy-stats-service
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
+    volumes:
+      - stats_logs:/app/logs
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # PostgreSQL数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: proxy-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS="--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: proxy-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # InfluxDB时序数据库
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: proxy-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=${INFLUXDB_BUCKET}
+      - INFLUXDB_ADMIN_USER=${INFLUXDB_USER}
+      - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}
+      - INFLUXDB_ADMIN_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: proxy-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./configs/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Grafana可视化
+  grafana:
+    image: grafana/grafana:latest
+    container_name: proxy-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  influxdb_data:
+  influxdb_config:
+  prometheus_data:
+  grafana_data:
+  nginx_logs:
+  api_logs:
+  rule_logs:
+  config_logs:
+  v2ray_logs:
+  clash_logs:
+  hysteria_logs:
+  v2ray_instance_logs:
+  clash_instance_logs:
+  stats_logs:
+
+networks:
+  proxy-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
