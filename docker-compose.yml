@@ -1,0 +1,436 @@
+version: '3.8'
+
+# VPS代理管理系统 - Docker编排配置
+# 基于混合分层架构，支持V2Ray、Clash、Hysteria等多协议统一管理
+
+services:
+  # ===========================================
+  # 负载均衡层
+  # ===========================================
+  
+  # Nginx反向代理服务
+  nginx:
+    image: nginx:alpine
+    container_name: vps-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - api-gateway
+      - grafana
+    networks:
+      - proxy-net
+    environment:
+      - TZ=Asia/Shanghai
+    labels:
+      - "traefik.enable=false"
+
+  # ===========================================
+  # API网关和业务服务层
+  # ===========================================
+
+  # API网关服务 - 统一入口
+  api-gateway:
+    image: node:18-alpine
+    container_name: vps-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src/api-gateway:/app
+      - api_logs:/app/logs
+    working_dir: /app
+    command: ["node", "server.js"]
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - JWT_SECRET=${JWT_SECRET}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - proxy-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 规则引擎服务
+  rule-engine:
+    image: node:18-alpine
+    container_name: vps-rule-engine
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./src/rule-engine:/app
+      - rule_logs:/app/logs
+    working_dir: /app
+    command: ["node", "index.js"]
+    environment:
+      - NODE_ENV=production
+      - PORT=8081
+      - DB_HOST=postgres
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - proxy-net
+
+  # 配置管理服务
+  config-manager:
+    image: node:18-alpine
+    container_name: vps-config-manager
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./src/config-manager:/app
+      - ./protocol-configs:/app/configs
+      - config_logs:/app/logs
+    working_dir: /app
+    command: ["node", "server.js"]
+    environment:
+      - NODE_ENV=production
+      - PORT=8082
+      - DB_HOST=postgres
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - proxy-net
+
+  # ===========================================
+  # 协议适配器层
+  # ===========================================
+
+  # V2Ray协议适配器
+  v2ray-adapter:
+    image: alpine:latest
+    container_name: vps-v2ray-adapter
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./src/adapters/v2ray:/app
+      - ./protocol-configs/v2ray:/configs
+      - v2ray_logs:/var/log/v2ray
+    working_dir: /app
+    command: ["sh", "start.sh"]
+    environment:
+      - ADAPTER_PORT=8083
+      - CONFIG_API_URL=http://config-manager:8082
+      - LOG_LEVEL=warning
+    depends_on:
+      - config-manager
+    networks:
+      - proxy-net
+
+  # Clash协议适配器
+  clash-adapter:
+    image: alpine:latest
+    container_name: vps-clash-adapter
+    restart: unless-stopped
+    ports:
+      - "8084:8084"
+    volumes:
+      - ./src/adapters/clash:/app
+      - ./protocol-configs/clash:/configs
+      - clash_logs:/var/log/clash
+    working_dir: /app
+    command: ["sh", "start.sh"]
+    environment:
+      - ADAPTER_PORT=8084
+      - CONFIG_API_URL=http://config-manager:8082
+      - CLASH_API_SECRET=${CLASH_API_SECRET}
+    depends_on:
+      - config-manager
+    networks:
+      - proxy-net
+
+  # Hysteria协议适配器
+  hysteria-adapter:
+    image: alpine:latest
+    container_name: vps-hysteria-adapter
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    volumes:
+      - ./src/adapters/hysteria:/app
+      - ./protocol-configs/hysteria:/configs
+      - hysteria_logs:/var/log/hysteria
+    working_dir: /app
+    command: ["sh", "start.sh"]
+    environment:
+      - ADAPTER_PORT=8085
+      - CONFIG_API_URL=http://config-manager:8082
+    depends_on:
+      - config-manager
+    networks:
+      - proxy-net
+
+  # ===========================================
+  # 协议实例层
+  # ===========================================
+
+  # V2Ray核心实例
+  v2ray-core:
+    image: v2fly/v2fly-core:latest
+    container_name: vps-v2ray-core
+    restart: unless-stopped
+    ports:
+      - "10001-10020:10001-10020"
+    volumes:
+      - ./protocol-configs/v2ray:/etc/v2ray:ro
+      - v2ray_core_logs:/var/log/v2ray
+    command: ["v2ray", "run", "-config", "/etc/v2ray/config.json"]
+    networks:
+      - proxy-net
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+
+  # Clash核心实例
+  clash-core:
+    image: ghcr.io/metacubex/mihomo:latest
+    container_name: vps-clash-core
+    restart: unless-stopped
+    ports:
+      - "7890:7890"
+      - "7891:7891" 
+      - "9090:9090"
+    volumes:
+      - ./protocol-configs/clash:/root/.config/mihomo:ro
+      - clash_core_logs:/var/log/clash
+    networks:
+      - proxy-net
+    cap_add:
+      - NET_ADMIN
+
+  # Hysteria核心实例
+  hysteria-core:
+    image: tobyxdd/hysteria:latest
+    container_name: vps-hysteria-core
+    restart: unless-stopped
+    ports:
+      - "36712:36712/udp"
+    volumes:
+      - ./protocol-configs/hysteria:/etc/hysteria:ro
+      - hysteria_core_logs:/var/log/hysteria
+    command: ["server", "-c", "/etc/hysteria/config.yaml"]
+    networks:
+      - proxy-net
+
+  # ===========================================
+  # 数据存储层
+  # ===========================================
+
+  # PostgreSQL主数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: vps-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - proxy-net
+    command: postgres -c max_connections=200 -c shared_buffers=256MB
+
+  # Redis缓存数据库
+  redis:
+    image: redis:7-alpine
+    container_name: vps-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server 
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    networks:
+      - proxy-net
+
+  # InfluxDB时序数据库
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: vps-influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=${INFLUXDB_BUCKET}
+      - INFLUXDB_ADMIN_USER=${INFLUXDB_USER}
+      - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}
+      - INFLUXDB_ADMIN_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+    networks:
+      - proxy-net
+
+  # ===========================================
+  # 监控和可观测性层
+  # ===========================================
+
+  # Prometheus监控服务
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vps-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-200h}'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./configs/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    networks:
+      - proxy-net
+    depends_on:
+      - api-gateway
+
+  # Grafana可视化服务
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vps-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - proxy-net
+    depends_on:
+      - prometheus
+      - influxdb
+
+  # ===========================================
+  # 辅助服务
+  # ===========================================
+
+  # 统计分析服务
+  stats-collector:
+    image: node:18-alpine
+    container_name: vps-stats-collector
+    restart: unless-stopped
+    ports:
+      - "8087:8087"
+    volumes:
+      - ./src/stats-collector:/app
+      - stats_logs:/app/logs
+    working_dir: /app
+    command: ["node", "collector.js"]
+    environment:
+      - NODE_ENV=production
+      - PORT=8087
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
+    depends_on:
+      - influxdb
+    networks:
+      - proxy-net
+
+# ===========================================
+# Docker数据卷定义
+# ===========================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  influxdb_data:
+    driver: local
+  influxdb_config:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  api_logs:
+    driver: local
+  rule_logs:
+    driver: local
+  config_logs:
+    driver: local
+  v2ray_logs:
+    driver: local
+  clash_logs:
+    driver: local
+  hysteria_logs:
+    driver: local
+  v2ray_core_logs:
+    driver: local
+  clash_core_logs:
+    driver: local
+  hysteria_core_logs:
+    driver: local
+  stats_logs:
+    driver: local
+
+# ===========================================
+# 网络配置
+# ===========================================
+networks:
+  proxy-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+          gateway: 172.30.0.1
+    driver_opts:
+      com.docker.network.bridge.name: vps-proxy-br
+      com.docker.network.driver.mtu: 1500

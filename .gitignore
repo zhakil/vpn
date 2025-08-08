@@ -1,0 +1,92 @@
+# VPS代理管理系统 - Git忽略文件
+
+# 环境配置文件
+.env
+.env.local
+.env.production
+.env.staging
+
+# 密钥和证书文件
+ssl/
+*.pem
+*.key
+*.crt
+*.csr
+
+# 日志文件
+logs/
+*.log
+*.log.*
+
+# 备份文件
+backups/
+*.sql
+*.dump
+*.tar.gz
+*.zip
+
+# Docker数据卷
+data/
+protocol-configs/
+**/node_modules/
+
+# 临时文件
+tmp/
+temp/
+.cache/
+*.tmp
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE文件
+.vscode/
+.idea/
+*.sublime-*
+.atom/
+
+# 运行时文件
+*.pid
+*.sock
+
+# 敏感信息
+secrets.txt
+passwords.txt
+auth.json
+
+# 构建产物
+dist/
+build/
+*.tar
+*.tgz
+
+# 数据库文件
+*.sqlite
+*.sqlite3
+*.db
+
+# 编译文件
+*.o
+*.so
+*.dylib
+*.exe
+
+# 包管理器
+package-lock.json
+yarn.lock
+composer.lock
+
+# 测试覆盖率
+coverage/
+.coverage
+.pytest_cache/
