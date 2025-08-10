@@ -42,30 +42,37 @@
 
 ### 📋 系统要求
 
-| 项目 | 最低要求 | 推荐配置 |
-|------|---------|---------|
-| **操作系统** | Ubuntu 20.04+ / CentOS 8+ / Debian 11+ | Ubuntu 22.04 LTS |
-| **CPU** | 2核心 | 4核心 |
-| **内存** | 4GB | 8GB |
-| **磁盘** | 20GB | 50GB SSD |
-| **网络** | 公网IP | 带宽≥10Mbps |
+| 版本 | CPU | 内存 | 磁盘 | 功能 |
+|------|-----|-----|-----|------|
+| **轻量版** ⭐ | 1核心 | 1GB | 10GB | V2Ray + Clash + 基础管理 |
+| **标准版** | 2核心 | 2GB | 20GB | 全功能 + 监控 + 数据库 |
+| **完整版** | 4核心 | 4GB | 50GB | 全功能 + 高可用 + 集群 |
+
+> 💡 **1GB内存VPS推荐使用轻量版**，资源占用仅约300MB
 
 ### 🔧 一键部署
 
+#### 💪 标准版 (推荐2GB+内存)
+```bash
+# 🚀 标准版一键部署
+curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/install.sh | bash
+```
+
+#### 🪶 轻量版 (适合1GB内存)
+```bash
+# 🪶 轻量版一键部署 
+curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/install-lite.sh | bash
+```
+
+#### 📥 手动下载部署
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/zhakil/vpn.git
 cd vpn
 
-# 2. 运行交互式部署脚本
-sudo bash scripts/deploy.sh
-```
-
-或者直接下载运行：
-
-```bash
-# 下载并运行
-curl -sSL https://raw.githubusercontent.com/zhakil/vpn/main/scripts/deploy.sh | sudo bash
+# 2. 选择部署脚本
+sudo bash install.sh        # 标准版
+sudo bash install-lite.sh   # 轻量版
 ```
 
 ### 3. 部署流程

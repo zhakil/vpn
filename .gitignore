@@ -52,6 +52,7 @@ desktop.ini
 # IDE文件
 .vscode/
 .idea/
+.vs/
 *.sublime-*
 .atom/
 
