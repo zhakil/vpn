@@ -46,17 +46,184 @@ log_error() {
 show_welcome() {
     clear
     echo -e "${CYAN}"
-    echo "╔══════════════════════════════════════════════════════╗"
-    echo "║                zhakil科技箱 v4.0.0                  ║"
-    echo "║            VPN代理服务一键部署脚本                  ║"
-    echo "║        支持V2Ray + Clash + Hysteria + BBR           ║"
-    echo "╚══════════════════════════════════════════════════════╝"
+    cat << 'EOF'
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║                  🚀 zhakil科技箱 v4.0.0                   ║
+║                                                            ║
+║             VPN代理服务器一键部署和管理系统                ║
+║                                                            ║
+║    📡 V2Ray VMESS    🎯 Clash代理    ⚡ Hysteria UDP      ║
+║    🔧 BBR网络优化    🛡️ 防火墙配置    📊 Web管理界面       ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
+EOF
     echo -e "${NC}"
+    echo
+    echo -e "${GREEN}✨ 主要功能特色：${NC}"
+    echo -e "   ${BLUE}•${NC} 一键部署多协议代理服务"
+    echo -e "   ${BLUE}•${NC} 自动生成客户端配置文件"  
+    echo -e "   ${BLUE}•${NC} Web管理界面和状态监控"
+    echo -e "   ${BLUE}•${NC} BBR加速和系统优化"
+    echo -e "   ${BLUE}•${NC} 完整的安全防护配置"
+    echo
+    
+    echo -e "${YELLOW}📋 系统要求：${NC}"
+    echo -e "   ${BLUE}•${NC} Ubuntu 18+ / Debian 10+ / CentOS 7+"
+    echo -e "   ${BLUE}•${NC} 1GB+ 内存，10GB+ 磁盘空间"
+    echo -e "   ${BLUE}•${NC} Root权限和稳定的网络连接"
+    echo
+    
+    read -p "$(echo -e "${GREEN}按回车键开始部署，或按 Ctrl+C 取消...${NC}")"
+    echo
+}
+
+# 显示进度条
+show_progress() {
+    local current=$1
+    local total=$2
+    local step_name=$3
+    local width=50
+    
+    local percent=$((current * 100 / total))
+    local filled=$((current * width / total))
+    
+    printf "\r${BLUE}[进度] ${YELLOW}[$step_name]${NC} "
+    printf "["
+    for ((i=0; i<filled; i++)); do printf "█"; done
+    for ((i=filled; i<width; i++)); do printf "░"; done
+    printf "] ${GREEN}%d%%${NC}" "$percent"
+    
+    if [[ $current -eq $total ]]; then
+        echo
+    fi
+}
+
+# 用户配置选择
+user_config_selection() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}🛠️ 安装配置选择${CYAN}                   ║${NC}"  
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    echo
+    
+    # 协议选择
+    echo -e "${GREEN}📡 选择要部署的代理协议：${NC}"
+    echo -e "   ${YELLOW}1.${NC} 完整版 (V2Ray + Clash + Hysteria) ${BLUE}[推荐]${NC}"
+    echo -e "   ${YELLOW}2.${NC} V2Ray版 (仅部署V2Ray VMESS)"
+    echo -e "   ${YELLOW}3.${NC} Clash版 (仅部署Clash代理)"
+    echo -e "   ${YELLOW}4.${NC} 轻量版 (V2Ray + Clash，适合小内存VPS)"
+    echo
+    while true; do
+        read -p "$(echo -e "${WHITE}请选择部署模式 [1-4，默认1]: ${NC}")" DEPLOY_MODE
+        DEPLOY_MODE=${DEPLOY_MODE:-1}
+        if [[ "$DEPLOY_MODE" =~ ^[1-4]$ ]]; then
+            break
+        else
+            echo -e "${RED}请输入有效选项 (1-4)${NC}"
+        fi
+    done
+    
+    # 设置部署标志
+    case $DEPLOY_MODE in
+        1)  INSTALL_V2RAY=true; INSTALL_CLASH=true; INSTALL_HYSTERIA=true
+            echo -e "${GREEN}✓ 已选择完整版部署${NC}"
+            ;;
+        2)  INSTALL_V2RAY=true; INSTALL_CLASH=false; INSTALL_HYSTERIA=false
+            echo -e "${GREEN}✓ 已选择V2Ray版部署${NC}"
+            ;;
+        3)  INSTALL_V2RAY=false; INSTALL_CLASH=true; INSTALL_HYSTERIA=false  
+            echo -e "${GREEN}✓ 已选择Clash版部署${NC}"
+            ;;
+        4)  INSTALL_V2RAY=true; INSTALL_CLASH=true; INSTALL_HYSTERIA=false
+            echo -e "${GREEN}✓ 已选择轻量版部署${NC}"
+            ;;
+    esac
+    echo
+    
+    # 域名和SSL配置
+    echo -e "${GREEN}🔒 SSL证书配置：${NC}"
+    echo -e "   ${YELLOW}1.${NC} 使用服务器IP + 自签名证书 ${BLUE}[简单快速]${NC}"
+    echo -e "   ${YELLOW}2.${NC} 使用域名 + Let's Encrypt证书 ${BLUE}[推荐]${NC}"
+    echo
+    while true; do
+        read -p "$(echo -e "${WHITE}请选择SSL配置 [1-2，默认1]: ${NC}")" SSL_MODE
+        SSL_MODE=${SSL_MODE:-1}
+        if [[ "$SSL_MODE" =~ ^[1-2]$ ]]; then
+            break
+        fi
+        echo -e "${RED}请输入有效选项 (1-2)${NC}"
+    done
+    
+    if [[ "$SSL_MODE" == "2" ]]; then
+        echo
+        while true; do
+            read -p "$(echo -e "${WHITE}请输入您的域名: ${NC}")" USER_DOMAIN
+            if [[ -n "$USER_DOMAIN" ]]; then
+                break
+            fi
+            echo -e "${RED}域名不能为空${NC}"
+        done
+        
+        while true; do
+            read -p "$(echo -e "${WHITE}请输入邮箱地址 (用于Let's Encrypt): ${NC}")" USER_EMAIL
+            if [[ "$USER_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+                break
+            fi
+            echo -e "${RED}请输入有效的邮箱地址${NC}"
+        done
+        echo -e "${GREEN}✓ 将为域名 $USER_DOMAIN 申请SSL证书${NC}"
+    else
+        echo -e "${GREEN}✓ 将使用自签名证书${NC}"
+    fi
+    echo
+    
+    # 端口配置
+    echo -e "${GREEN}🌐 端口配置 (可直接回车使用默认值)：${NC}"
+    read -p "$(echo -e "${WHITE}V2Ray端口 [默认10001]: ${NC}")" CUSTOM_V2RAY_PORT
+    read -p "$(echo -e "${WHITE}Clash HTTP端口 [默认7890]: ${NC}")" CUSTOM_CLASH_PORT  
+    read -p "$(echo -e "${WHITE}Hysteria UDP端口 [默认36712]: ${NC}")" CUSTOM_HYSTERIA_PORT
+    
+    # 设置端口
+    V2RAY_PORT=${CUSTOM_V2RAY_PORT:-10001}
+    CLASH_PORT=${CUSTOM_CLASH_PORT:-7890}
+    HYSTERIA_PORT=${CUSTOM_HYSTERIA_PORT:-36712}
+    
+    echo -e "${GREEN}✓ 端口配置完成${NC}"
+    echo
+    
+    # 确认配置
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}📋 配置确认${CYAN}                       ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    echo -e "${YELLOW}部署模式: ${GREEN}模式 $DEPLOY_MODE${NC}"
+    [[ "$INSTALL_V2RAY" == "true" ]] && echo -e "${YELLOW}V2Ray VMESS: ${GREEN}启用 (端口: $V2RAY_PORT)${NC}"
+    [[ "$INSTALL_CLASH" == "true" ]] && echo -e "${YELLOW}Clash代理: ${GREEN}启用 (端口: $CLASH_PORT)${NC}"
+    [[ "$INSTALL_HYSTERIA" == "true" ]] && echo -e "${YELLOW}Hysteria UDP: ${GREEN}启用 (端口: $HYSTERIA_PORT)${NC}"
+    
+    if [[ "$SSL_MODE" == "2" ]]; then
+        echo -e "${YELLOW}SSL配置: ${GREEN}Let's Encrypt证书${NC}"
+        echo -e "${YELLOW}域名: ${GREEN}$USER_DOMAIN${NC}"
+        echo -e "${YELLOW}邮箱: ${GREEN}$USER_EMAIL${NC}"
+    else
+        echo -e "${YELLOW}SSL配置: ${GREEN}自签名证书${NC}"
+    fi
+    echo
+    
+    read -p "$(echo -e "${GREEN}确认开始安装? [Y/n]: ${NC}")" CONFIRM_INSTALL
+    if [[ "$CONFIRM_INSTALL" =~ ^[Nn]$ ]]; then
+        echo -e "${YELLOW}安装已取消${NC}"
+        exit 0
+    fi
+    
+    echo -e "${GREEN}✅ 配置确认完成，开始安装...${NC}"
     echo
 }
 
 # 检查系统环境
 check_system() {
+    show_progress 1 8 "检查系统权限"
+    
     # 检查root权限
     if [[ $EUID -ne 0 ]]; then
         log_error "需要root权限运行此脚本"
@@ -64,28 +231,38 @@ check_system() {
         exit 1
     fi
     
+    show_progress 2 8 "检测操作系统"
+    sleep 1
+    
     # 检测操作系统
     if [[ -f /etc/redhat-release ]]; then
         OS="centos"
         PM="yum"
     elif [[ -f /etc/debian_version ]]; then
-        OS="ubuntu"
+        OS="ubuntu"  
         PM="apt"
     else
+        echo
         log_error "不支持的操作系统，仅支持Ubuntu/Debian/CentOS"
         exit 1
     fi
     
-    log_success "检测到系统: $OS"
+    show_progress 3 8 "获取服务器信息"
+    sleep 1
     
     # 获取服务器IP
     SERVER_IP=$(curl -s4 ifconfig.me 2>/dev/null || curl -s4 ip.sb 2>/dev/null || echo "")
     if [[ -z "$SERVER_IP" ]]; then
+        echo
         log_error "无法获取服务器IP地址"
         exit 1
     fi
     
+    show_progress 4 8 "系统环境检查完成"
+    echo
+    log_success "检测到系统: $OS"
     log_success "服务器IP: $SERVER_IP"
+    echo
 }
 
 # 更新系统并安装基础工具
@@ -1356,61 +1533,183 @@ EOF
 show_result() {
     clear
     echo -e "${GREEN}"
-    echo "╔══════════════════════════════════════════════════════╗"
-    echo "║                🎉 安装完成！🎉                      ║"
-    echo "║              zhakil科技箱 VPN服务器                  ║"
-    echo "╚══════════════════════════════════════════════════════╝"
+    cat << 'EOF'
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║               🎉✨ 安装部署完成！ ✨🎉                   ║
+║                                                            ║
+║                zhakil科技箱 VPN服务器                      ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
+EOF
     echo -e "${NC}"
     echo
     
-    echo -e "${YELLOW}━━━━━━━━ 服务访问地址 ━━━━━━━━${NC}"
-    echo -e "${GREEN}🌐 主页面: ${BLUE}https://$SERVER_IP${NC}"
-    echo -e "${GREEN}⚡ 管理面板: ${BLUE}http://$SERVER_IP:$WEB_PORT${NC}"
-    echo -e "${GREEN}🎛️  Clash面板: ${BLUE}http://$SERVER_IP:9090${NC}"
+    # 显示已安装的服务
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}🎯 已部署服务${CYAN}                     ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    
+    if [[ "$INSTALL_V2RAY" == "true" ]]; then
+        echo -e "${GREEN}✅ V2Ray VMESS: ${BLUE}端口 $V2RAY_PORT (WebSocket)${NC}"
+    fi
+    if [[ "$INSTALL_CLASH" == "true" ]]; then
+        echo -e "${GREEN}✅ Clash代理: ${BLUE}HTTP $CLASH_PORT / SOCKS $(($CLASH_PORT + 1))${NC}"
+    fi
+    if [[ "$INSTALL_HYSTERIA" == "true" ]]; then
+        echo -e "${GREEN}✅ Hysteria UDP: ${BLUE}端口 $HYSTERIA_PORT (QUIC)${NC}"
+    fi
+    echo -e "${GREEN}✅ BBR网络加速: ${BLUE}已启用并优化${NC}"
+    echo -e "${GREEN}✅ 防火墙配置: ${BLUE}已完成${NC}"
+    echo -e "${GREEN}✅ Web管理界面: ${BLUE}已部署${NC}"
     echo
     
-    echo -e "${YELLOW}━━━━━━━━ 服务状态 ━━━━━━━━${NC}"
-    echo -e "${GREEN}✅ V2Ray: ${BLUE}端口 $V2RAY_PORT${NC}"
-    echo -e "${GREEN}✅ Clash: ${BLUE}端口 $CLASH_PORT${NC}"
-    echo -e "${GREEN}✅ Hysteria: ${BLUE}端口 $HYSTERIA_PORT (UDP)${NC}"
-    echo -e "${GREEN}✅ BBR加速: ${BLUE}已启用${NC}"
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}🌐 服务访问地址${CYAN}                  ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    if [[ "$SSL_MODE" == "2" && -n "$USER_DOMAIN" ]]; then
+        echo -e "${GREEN}🌐 主页面: ${BLUE}https://$USER_DOMAIN${NC}"
+        echo -e "${GREEN}⚡ 管理面板: ${BLUE}https://$USER_DOMAIN:$WEB_PORT${NC}"
+        if [[ "$INSTALL_CLASH" == "true" ]]; then
+            echo -e "${GREEN}🎛️  Clash面板: ${BLUE}https://$USER_DOMAIN:9090${NC}"
+        fi
+    else
+        echo -e "${GREEN}🌐 主页面: ${BLUE}https://$SERVER_IP${NC}"
+        echo -e "${GREEN}⚡ 管理面板: ${BLUE}http://$SERVER_IP:$WEB_PORT${NC}"
+        if [[ "$INSTALL_CLASH" == "true" ]]; then
+            echo -e "${GREEN}🎛️  Clash面板: ${BLUE}http://$SERVER_IP:9090${NC}"
+        fi
+    fi
+    echo -e "${GREEN}📋 配置文件: ${BLUE}/root/vpn-info.txt${NC}"
     echo
     
-    echo -e "${YELLOW}━━━━━━━━ 快捷命令 ━━━━━━━━${NC}"
-    echo -e "${CYAN}zhakil${NC}          - 进入管理界面"
-    echo -e "${CYAN}systemctl status v2ray${NC} - 查看V2Ray状态"
-    echo -e "${CYAN}cat /root/vpn-info.txt${NC} - 查看完整配置"
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}🎮 快捷操作命令${CYAN}                  ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    echo -e "${YELLOW}🔧 管理命令:${NC}"
+    echo -e "   ${CYAN}zhakil${NC}                    - 进入管理界面"
+    echo -e "   ${CYAN}cat /root/vpn-info.txt${NC}    - 查看完整配置信息"
+    echo
+    echo -e "${YELLOW}📊 状态检查:${NC}"
+    if [[ "$INSTALL_V2RAY" == "true" ]]; then
+        echo -e "   ${CYAN}systemctl status v2ray${NC}     - 查看V2Ray状态"
+    fi
+    if [[ "$INSTALL_CLASH" == "true" ]]; then
+        echo -e "   ${CYAN}systemctl status clash${NC}     - 查看Clash状态"
+    fi
+    if [[ "$INSTALL_HYSTERIA" == "true" ]]; then
+        echo -e "   ${CYAN}systemctl status hysteria-server${NC} - 查看Hysteria状态"
+    fi
+    echo
+    echo -e "${YELLOW}🔍 日志查看:${NC}"
+    if [[ "$INSTALL_V2RAY" == "true" ]]; then
+        echo -e "   ${CYAN}journalctl -u v2ray -f${NC}    - V2Ray实时日志"
+    fi
+    if [[ "$INSTALL_CLASH" == "true" ]]; then
+        echo -e "   ${CYAN}journalctl -u clash -f${NC}    - Clash实时日志"
+    fi
     echo
     
-    echo -e "${YELLOW}━━━━━━━━ 下一步操作 ━━━━━━━━${NC}"
-    echo -e "1. ${GREEN}输入 ${CYAN}zhakil${GREEN} 进入管理界面${NC}"
-    echo -e "2. ${GREEN}选择 ${CYAN}7${GREEN} 生成客户端配置${NC}"
-    echo -e "3. ${GREEN}将配置导入到客户端软件${NC}"
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}📱 获取客户端配置${CYAN}                ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}🚀 快速开始 - 3步获取配置:${NC}"
+    echo -e "   ${BLUE}1.${NC} 输入 ${CYAN}zhakil${NC} 进入管理界面"
+    echo -e "   ${BLUE}2.${NC} 选择 ${CYAN}7. 配置生成中心${NC}"
+    echo -e "   ${BLUE}3.${NC} 选择对应的客户端配置类型"
+    echo
+    echo -e "${GREEN}📲 支持的配置格式:${NC}"
+    if [[ "$INSTALL_V2RAY" == "true" ]]; then
+        echo -e "   ${BLUE}•${NC} V2Ray JSON配置 + VMESS分享链接"
+    fi
+    if [[ "$INSTALL_CLASH" == "true" ]]; then
+        echo -e "   ${BLUE}•${NC} Clash YAML配置 (含智能分流规则)"
+    fi
+    if [[ "$INSTALL_HYSTERIA" == "true" ]]; then
+        echo -e "   ${BLUE}•${NC} Hysteria YAML配置 + 分享链接"
+    fi
+    echo -e "   ${BLUE}•${NC} 通用订阅链接 (Base64编码)"
+    echo -e "   ${BLUE}•${NC} 二维码图片 (移动设备扫描)"
     echo
     
-    echo -e "${RED}⚠️  重要提醒:${NC}"
-    echo -e "• 配置信息已保存到 ${YELLOW}/root/vpn-info.txt${NC}"
-    echo -e "• 请妥善保管UUID和密码等敏感信息"
-    echo -e "• 建议定期备份配置文件"
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}⚠️  重要安全提醒${CYAN}                 ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    echo -e "${RED}🔐 安全建议:${NC}"
+    echo -e "   ${BLUE}•${NC} 配置信息包含敏感数据，请妥善保管"
+    echo -e "   ${BLUE}•${NC} 建议定期更换UUID和密码"
+    echo -e "   ${BLUE}•${NC} 定期备份 ${YELLOW}/etc/${NC} 目录下的配置文件"
+    echo -e "   ${BLUE}•${NC} 监控服务器资源使用情况"
+    echo -e "   ${BLUE}•${NC} 如有异常，请及时检查日志"
+    echo
+    echo -e "${GREEN}📚 技术支持: ${BLUE}https://github.com/zhakil/vpn${NC}"
     echo
     
-    read -p "$(echo -e "${GREEN}按回车键进入管理界面...${NC}")"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}🎊 恭喜！zhakil科技箱VPN代理服务器部署完成！${NC}"
+    echo -e "${WHITE}现在可以开始生成客户端配置并享受高速代理服务了！${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
+    
+    read -p "$(echo -e "${GREEN}按回车键进入管理界面开始配置...${NC}")"
     /usr/local/bin/zhakil 2>/dev/null || ./manage.sh
 }
 
 # 主安装流程
 main() {
     show_welcome
+    user_config_selection
     check_system
+    
+    echo -e "${CYAN}╔════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}🚀 开始安装部署${CYAN}                   ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════╝${NC}"
+    echo
+    
+    # 基础环境安装
+    log_info "正在安装基础环境..."
     install_base_tools
     install_bbr
     setup_firewall
-    install_v2ray
-    install_clash
-    install_hysteria
+    
+    # 根据用户选择安装服务
+    TOTAL_STEPS=0
+    [[ "$INSTALL_V2RAY" == "true" ]] && ((TOTAL_STEPS++))
+    [[ "$INSTALL_CLASH" == "true" ]] && ((TOTAL_STEPS++)) 
+    [[ "$INSTALL_HYSTERIA" == "true" ]] && ((TOTAL_STEPS++))
+    ((TOTAL_STEPS+=2)) # Nginx + Web面板
+    
+    CURRENT_STEP=0
+    
+    if [[ "$INSTALL_V2RAY" == "true" ]]; then
+        ((CURRENT_STEP++))
+        echo -e "${YELLOW}━━━━━━━━ 安装V2Ray服务 ($CURRENT_STEP/$TOTAL_STEPS) ━━━━━━━━${NC}"
+        install_v2ray
+    fi
+    
+    if [[ "$INSTALL_CLASH" == "true" ]]; then
+        ((CURRENT_STEP++))
+        echo -e "${YELLOW}━━━━━━━━ 安装Clash服务 ($CURRENT_STEP/$TOTAL_STEPS) ━━━━━━━━${NC}"
+        install_clash
+    fi
+    
+    if [[ "$INSTALL_HYSTERIA" == "true" ]]; then
+        ((CURRENT_STEP++))
+        echo -e "${YELLOW}━━━━━━━━ 安装Hysteria服务 ($CURRENT_STEP/$TOTAL_STEPS) ━━━━━━━━${NC}"
+        install_hysteria
+    fi
+    
+    ((CURRENT_STEP++))
+    echo -e "${YELLOW}━━━━━━━━ 配置Web服务 ($CURRENT_STEP/$TOTAL_STEPS) ━━━━━━━━${NC}"
     install_nginx
+    
+    ((CURRENT_STEP++))  
+    echo -e "${YELLOW}━━━━━━━━ 创建管理面板 ($CURRENT_STEP/$TOTAL_STEPS) ━━━━━━━━${NC}"
     create_web_panel
+    
+    echo -e "${YELLOW}━━━━━━━━ 保存配置信息 ━━━━━━━━${NC}"
     save_config_info
+    
     show_result
 }
 
