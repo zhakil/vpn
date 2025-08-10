@@ -590,13 +590,643 @@ update_script() {
     read
 }
 
+# 配置生成中心
+config_generator() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}配置生成中心${CYAN}               ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    echo -e "${GREEN}当前服务器IP: ${YELLOW}$SERVER_IP${NC}"
+    echo -e "${BLUE}支持生成以下客户端配置:${NC}"
+    echo
+    
+    echo -e " ${YELLOW}1.${NC} V2Ray配置生成 (VMESS/VLESS)"
+    echo -e " ${YELLOW}2.${NC} Clash配置生成 (YAML)"
+    echo -e " ${YELLOW}3.${NC} Hysteria配置生成 (YAML)"
+    echo -e " ${YELLOW}4.${NC} 分享链接生成 (URI)"
+    echo -e " ${YELLOW}5.${NC} 订阅链接生成 (Base64)"
+    echo -e " ${YELLOW}6.${NC} 二维码生成"
+    echo -e " ${YELLOW}7.${NC} 批量配置生成"
+    echo -e " ${YELLOW}8.${NC} 配置文件导出"
+    echo -e " ${RED}0.${NC} 返回主菜单"
+    echo
+    echo -ne "${WHITE}请选择配置类型: ${NC}"
+    
+    read choice
+    case $choice in
+        1) generate_v2ray_config ;;
+        2) generate_clash_config ;;
+        3) generate_hysteria_config ;;
+        4) generate_share_links ;;
+        5) generate_subscription ;;
+        6) generate_qrcode ;;
+        7) batch_config_generation ;;
+        8) export_all_configs ;;
+        0) return ;;
+        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
+    esac
+    
+    echo -ne "${WHITE}按回车键继续...${NC}"
+    read
+    config_generator
+}
+
+# V2Ray配置生成
+generate_v2ray_config() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║            ${WHITE}V2Ray配置生成${CYAN}               ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    # 读取配置信息
+    if [[ -f /root/vpn-config.env ]]; then
+        source /root/vpn-config.env
+        UUID=${V2RAY_UUID}
+        PORT=${V2RAY_PORT}
+        ALTID="64"
+        log_info "从配置文件加载V2Ray信息"
+    else
+        # 尝试从系统配置读取
+        UUID=$(grep -o '"id": "[^"]*"' /usr/local/etc/v2ray/config.json 2>/dev/null | head -1 | cut -d'"' -f4)
+        PORT=$(grep -o '"port": [0-9]*' /usr/local/etc/v2ray/config.json 2>/dev/null | head -1 | cut -d' ' -f2)
+        ALTID="64"
+        
+        # 如果还是没有，则生成新的
+        if [[ -z "$UUID" ]]; then
+            UUID=$(cat /proc/sys/kernel/random/uuid)
+            log_warning "未找到现有配置，生成新UUID"
+        fi
+        PORT=${PORT:-10001}
+    fi
+    
+    echo -e "${GREEN}V2Ray VMESS配置信息:${NC}"
+    echo -e "服务器地址: ${YELLOW}$SERVER_IP${NC}"
+    echo -e "端口: ${YELLOW}$PORT${NC}"
+    echo -e "UUID: ${YELLOW}$UUID${NC}"
+    echo -e "额外ID: ${YELLOW}$ALTID${NC}"
+    echo -e "传输协议: ${YELLOW}ws (WebSocket)${NC}"
+    echo -e "路径: ${YELLOW}/ray${NC}"
+    echo
+    
+    # 生成V2Ray客户端配置
+    echo -e "${BLUE}V2Ray客户端配置文件:${NC}"
+    cat > /tmp/v2ray-client.json << EOF
+{
+  "inbounds": [
+    {
+      "port": 1080,
+      "listen": "127.0.0.1",
+      "protocol": "socks",
+      "settings": {
+        "udp": true
+      }
+    },
+    {
+      "port": 8080,
+      "listen": "127.0.0.1", 
+      "protocol": "http"
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "vmess",
+      "settings": {
+        "vnext": [
+          {
+            "address": "$SERVER_IP",
+            "port": $PORT,
+            "users": [
+              {
+                "id": "$UUID",
+                "alterId": $ALTID,
+                "security": "auto"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/ray"
+        }
+      }
+    }
+  ]
+}
+EOF
+    
+    echo -e "${GREEN}配置文件已生成: ${YELLOW}/tmp/v2ray-client.json${NC}"
+    echo
+    
+    # 生成VMESS链接
+    VMESS_LINK="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"zhakil-VPN\",\"add\":\"$SERVER_IP\",\"port\":\"$PORT\",\"id\":\"$UUID\",\"aid\":\"$ALTID\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/ray\",\"tls\":\"\"}" | base64 -w 0)"
+    
+    echo -e "${BLUE}VMESS分享链接:${NC}"
+    echo -e "${GREEN}$VMESS_LINK${NC}"
+    echo
+    
+    echo -e "${YELLOW}使用方法:${NC}"
+    echo "1. 复制上面的VMESS链接"
+    echo "2. 在V2Ray客户端中导入链接"
+    echo "3. 或者使用配置文件 /tmp/v2ray-client.json"
+}
+
+# Clash配置生成
+generate_clash_config() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║            ${WHITE}Clash配置生成${CYAN}               ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    # 读取配置信息
+    if [[ -f /root/vpn-config.env ]]; then
+        source /root/vpn-config.env
+        UUID=${V2RAY_UUID}
+        V2RAY_PORT=${V2RAY_PORT}
+        HYSTERIA_PORT=${HYSTERIA_PORT}
+        HYSTERIA_PASSWORD=${HYSTERIA_PASSWORD}
+        log_info "从配置文件加载服务器信息"
+    else
+        # 尝试从系统配置读取
+        UUID=$(grep -o '"id": "[^"]*"' /usr/local/etc/v2ray/config.json 2>/dev/null | head -1 | cut -d'"' -f4)
+        V2RAY_PORT=$(grep -o '"port": [0-9]*' /usr/local/etc/v2ray/config.json 2>/dev/null | head -1 | cut -d' ' -f2)
+        HYSTERIA_PORT=$(grep -o 'listen: :[0-9]*' /etc/hysteria/config.yaml 2>/dev/null | cut -d':' -f3)
+        HYSTERIA_PASSWORD=$(grep -o 'password: .*' /etc/hysteria/config.yaml 2>/dev/null | cut -d' ' -f2)
+        
+        # 默认值
+        UUID=${UUID:-$(cat /proc/sys/kernel/random/uuid)}
+        V2RAY_PORT=${V2RAY_PORT:-10001}
+        HYSTERIA_PORT=${HYSTERIA_PORT:-36712}
+        HYSTERIA_PASSWORD=${HYSTERIA_PASSWORD:-zhakil123}
+    fi
+    
+    echo -e "${GREEN}生成Clash配置文件...${NC}"
+    
+    cat > /tmp/clash-client.yaml << EOF
+# Clash配置文件 - zhakil科技箱
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 127.0.0.1:9090
+
+dns:
+  enable: true
+  listen: 0.0.0.0:53
+  default-nameserver:
+    - 223.5.5.5
+    - 8.8.8.8
+  nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+
+proxies:
+  - name: "zhakil-V2Ray"
+    type: vmess
+    server: $SERVER_IP
+    port: $V2RAY_PORT
+    uuid: $UUID
+    alterId: 64
+    cipher: auto
+    network: ws
+    ws-opts:
+      path: /ray
+      headers:
+        Host: $SERVER_IP
+
+  - name: "zhakil-Hysteria"
+    type: hysteria
+    server: $SERVER_IP
+    port: $HYSTERIA_PORT
+    auth_str: zhakil123
+    alpn:
+      - h3
+    protocol: udp
+    up: 20
+    down: 100
+
+proxy-groups:
+  - name: "🚀 节点选择"
+    type: select
+    proxies:
+      - "♻️ 自动选择"
+      - "🔯 故障转移"
+      - "🔮 负载均衡"
+      - "zhakil-V2Ray"
+      - "zhakil-Hysteria"
+
+  - name: "♻️ 自动选择"
+    type: url-test
+    proxies:
+      - "zhakil-V2Ray"
+      - "zhakil-Hysteria"
+    url: 'http://www.gstatic.com/generate_204'
+    interval: 300
+
+  - name: "🔯 故障转移"
+    type: fallback
+    proxies:
+      - "zhakil-V2Ray"
+      - "zhakil-Hysteria"
+    url: 'http://www.gstatic.com/generate_204'
+    interval: 300
+
+  - name: "🔮 负载均衡"
+    type: load-balance
+    proxies:
+      - "zhakil-V2Ray"  
+      - "zhakil-Hysteria"
+    url: 'http://www.gstatic.com/generate_204'
+    interval: 300
+
+rules:
+  - DOMAIN-SUFFIX,google.com,🚀 节点选择
+  - DOMAIN-SUFFIX,youtube.com,🚀 节点选择
+  - DOMAIN-SUFFIX,facebook.com,🚀 节点选择
+  - DOMAIN-SUFFIX,twitter.com,🚀 节点选择
+  - DOMAIN-SUFFIX,instagram.com,🚀 节点选择
+  - DOMAIN-SUFFIX,telegram.org,🚀 节点选择
+  - DOMAIN-KEYWORD,google,🚀 节点选择
+  - GEOIP,CN,DIRECT
+  - MATCH,🚀 节点选择
+EOF
+
+    echo -e "${GREEN}配置文件已生成: ${YELLOW}/tmp/clash-client.yaml${NC}"
+    echo
+    echo -e "${YELLOW}使用方法:${NC}"
+    echo "1. 下载配置文件: /tmp/clash-client.yaml"
+    echo "2. 导入到Clash客户端"
+    echo "3. 或者复制配置内容到Clash配置中"
+}
+
+# Hysteria配置生成  
+generate_hysteria_config() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║          ${WHITE}Hysteria配置生成${CYAN}             ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    # 读取配置信息
+    if [[ -f /root/vpn-config.env ]]; then
+        source /root/vpn-config.env
+        HYSTERIA_PORT=${HYSTERIA_PORT}
+        HYSTERIA_PASSWORD=${HYSTERIA_PASSWORD}
+        HYSTERIA_OBFS_PASSWORD=${HYSTERIA_OBFS_PASSWORD}
+        UP_MBPS=${HYSTERIA_UP_MBPS:-20}
+        DOWN_MBPS=${HYSTERIA_DOWN_MBPS:-100}
+        log_info "从配置文件加载Hysteria信息"
+    else
+        # 尝试从系统配置读取
+        HYSTERIA_PORT=$(grep -o 'listen: :[0-9]*' /etc/hysteria/config.yaml 2>/dev/null | cut -d':' -f3)
+        HYSTERIA_PASSWORD=$(grep -A1 'auth:' /etc/hysteria/config.yaml 2>/dev/null | grep 'password:' | cut -d' ' -f4)
+        HYSTERIA_OBFS_PASSWORD=$(grep -A2 'salamander:' /etc/hysteria/config.yaml 2>/dev/null | grep 'password:' | cut -d'"' -f2)
+        
+        # 默认值
+        HYSTERIA_PORT=${HYSTERIA_PORT:-36712}
+        HYSTERIA_PASSWORD=${HYSTERIA_PASSWORD:-zhakil123}
+        UP_MBPS="20"
+        DOWN_MBPS="100"
+        log_warning "未找到配置文件，使用默认值"
+    fi
+    
+    echo -e "${GREEN}Hysteria客户端配置:${NC}"
+    
+    cat > /tmp/hysteria-client.yaml << EOF
+# Hysteria客户端配置 - zhakil科技箱
+# 服务器连接配置
+server: $SERVER_IP:$HYSTERIA_PORT
+auth_str: $HYSTERIA_PASSWORD
+
+# 带宽配置
+up_mbps: $UP_MBPS
+down_mbps: $DOWN_MBPS
+
+# 本地代理端口
+socks5:
+  listen: 127.0.0.1:1080
+
+http:
+  listen: 127.0.0.1:8080
+
+# TLS设置
+tls:
+  sni: $SERVER_IP
+  insecure: true  # 使用自签名证书时设为true
+  
+# QUIC传输优化
+quic:
+  initial_stream_receive_window: 8388608      # 8MB
+  max_stream_receive_window: 8388608          # 8MB
+  initial_connection_receive_window: 20971520 # 20MB
+  max_connection_receive_window: 20971520     # 20MB
+  max_idle_timeout: 60s                       # 空闲超时
+  max_incoming_streams: 1024                  # 最大流数
+  disable_path_mtu_discovery: false           # 启用MTU发现
+
+# 混淆设置（增强安全性）
+$(if [[ -n "$HYSTERIA_OBFS_PASSWORD" ]]; then
+echo "obfs: salamander"
+echo "obfs_password: $HYSTERIA_OBFS_PASSWORD"
+else
+echo "# obfs: salamander"
+echo "# obfs_password: 混淆密码未设置"
+fi)
+
+# 连接重试设置
+retry: 5
+retry_interval: 3s
+
+# 路由规则（可选）
+acl:
+  - reject(geoip:cn && port:25)     # 阻止中国IP访问25端口
+  - reject(all && port:22)          # 阻止SSH连接
+  - allow(all)                      # 允许其他连接
+EOF
+
+    echo -e "${GREEN}配置文件已生成: ${YELLOW}/tmp/hysteria-client.yaml${NC}"
+    echo
+    echo -e "${BLUE}Hysteria分享链接:${NC}"
+    HYSTERIA_LINK="hysteria://$SERVER_IP:$HYSTERIA_PORT?auth=$HYSTERIA_PASSWORD&upmbps=20&downmbps=100&obfs=salamander&obfspassword=zhakil_obfs_2024#zhakil-Hysteria"
+    echo -e "${GREEN}$HYSTERIA_LINK${NC}"
+    echo
+    echo -e "${YELLOW}使用方法:${NC}"
+    echo "1. 下载配置文件或复制分享链接"
+    echo "2. 导入到Hysteria客户端"
+    echo "3. 支持Windows/macOS/Linux/Android/iOS"
+}
+
+# 生成分享链接
+generate_share_links() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}分享链接生成${CYAN}               ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    UUID=${UUID:-$(cat /proc/sys/kernel/random/uuid)}
+    V2RAY_PORT=${V2RAY_PORT:-10001}
+    HYSTERIA_PORT=${HYSTERIA_PORT:-36712}
+    
+    echo -e "${YELLOW}━━━━━━━━ V2Ray VMESS 链接 ━━━━━━━━${NC}"
+    VMESS_LINK="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"zhakil-V2Ray\",\"add\":\"$SERVER_IP\",\"port\":\"$V2RAY_PORT\",\"id\":\"$UUID\",\"aid\":\"64\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/ray\",\"tls\":\"\"}" | base64 -w 0)"
+    echo -e "${GREEN}$VMESS_LINK${NC}"
+    echo
+    
+    echo -e "${YELLOW}━━━━━━━━ Hysteria 链接 ━━━━━━━━${NC}" 
+    HYSTERIA_LINK="hysteria://$SERVER_IP:$HYSTERIA_PORT?auth=zhakil123&upmbps=20&downmbps=100&obfs=salamander&obfspassword=zhakil_obfs_2024#zhakil-Hysteria"
+    echo -e "${GREEN}$HYSTERIA_LINK${NC}"
+    echo
+    
+    echo -e "${YELLOW}━━━━━━━━ 通用订阅链接 ━━━━━━━━${NC}"
+    SUBSCRIPTION_CONTENT="$VMESS_LINK"$'\n'"$HYSTERIA_LINK"
+    SUBSCRIPTION_LINK="http://$SERVER_IP:8080/subscription/$(echo -n "$SUBSCRIPTION_CONTENT" | base64 -w 0 | head -c 8)"
+    echo -e "${GREEN}$SUBSCRIPTION_LINK${NC}"
+    echo
+    
+    echo -e "${BLUE}使用说明:${NC}"
+    echo "• VMESS链接适用于: V2RayN, V2RayNG, Clash"
+    echo "• Hysteria链接适用于: Hysteria客户端"
+    echo "• 订阅链接适用于: 支持订阅的所有客户端"
+    echo
+    
+    # 保存到文件
+    cat > /tmp/share-links.txt << EOF
+zhakil科技箱 VPN分享链接
+====================
+
+V2Ray VMESS:
+$VMESS_LINK
+
+Hysteria:
+$HYSTERIA_LINK
+
+订阅链接:
+$SUBSCRIPTION_LINK
+
+服务器信息:
+- IP地址: $SERVER_IP
+- V2Ray端口: $V2RAY_PORT  
+- Hysteria端口: $HYSTERIA_PORT
+- 生成时间: $(date)
+EOF
+    
+    echo -e "${GREEN}分享链接已保存到: ${YELLOW}/tmp/share-links.txt${NC}"
+}
+
+# 生成订阅链接
+generate_subscription() {
+    clear  
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}订阅链接生成${CYAN}               ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    echo -e "${GREEN}正在生成通用订阅链接...${NC}"
+    
+    # 生成各种协议的链接
+    UUID=${UUID:-$(cat /proc/sys/kernel/random/uuid)}
+    VMESS_LINK="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"zhakil-V2Ray\",\"add\":\"$SERVER_IP\",\"port\":\"10001\",\"id\":\"$UUID\",\"aid\":\"64\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/ray\",\"tls\":\"\"}" | base64 -w 0)"
+    HYSTERIA_LINK="hysteria://$SERVER_IP:36712?auth=zhakil123&upmbps=20&downmbps=100#zhakil-Hysteria"
+    
+    # 创建订阅内容
+    SUBSCRIPTION_CONTENT="$VMESS_LINK"$'\n'"$HYSTERIA_LINK"
+    
+    # Base64编码
+    ENCODED_SUBSCRIPTION=$(echo -n "$SUBSCRIPTION_CONTENT" | base64 -w 0)
+    
+    # 创建订阅服务目录
+    mkdir -p /tmp/subscription
+    echo -n "$ENCODED_SUBSCRIPTION" > /tmp/subscription/nodes
+    
+    # 生成订阅链接
+    SUBSCRIPTION_URL="http://$SERVER_IP:8080/subscription/nodes"
+    
+    echo -e "${YELLOW}━━━━━━━━ 订阅信息 ━━━━━━━━${NC}"
+    echo -e "订阅链接: ${GREEN}$SUBSCRIPTION_URL${NC}"
+    echo -e "更新间隔: ${YELLOW}24小时${NC}"
+    echo -e "节点数量: ${YELLOW}2个${NC}"
+    echo -e "支持协议: ${YELLOW}VMESS, Hysteria${NC}"
+    echo
+    
+    echo -e "${BLUE}客户端使用方法:${NC}"
+    echo "1. 复制上面的订阅链接"
+    echo "2. 在客户端中添加订阅"
+    echo "3. 更新订阅获取节点"
+    echo
+    
+    echo -e "${YELLOW}兼容客户端:${NC}"
+    echo "• Clash for Windows/Android"
+    echo "• V2RayN/V2RayNG"  
+    echo "• Shadowrocket"
+    echo "• Quantumult X"
+    echo "• Surge"
+    
+    # 保存订阅文件
+    cat > /tmp/subscription-info.txt << EOF
+zhakil科技箱 VPN订阅信息
+=====================
+
+订阅链接: $SUBSCRIPTION_URL
+Base64内容: $ENCODED_SUBSCRIPTION
+
+包含节点:
+1. zhakil-V2Ray (VMESS WebSocket)
+2. zhakil-Hysteria (UDP)
+
+生成时间: $(date)
+有效期: 永久
+更新频率: 24小时
+EOF
+    
+    echo -e "${GREEN}订阅信息已保存到: ${YELLOW}/tmp/subscription-info.txt${NC}"
+}
+
+# 生成二维码
+generate_qrcode() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}二维码生成${CYAN}                 ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    # 检查是否安装了qrencode
+    if ! command -v qrencode &> /dev/null; then
+        echo -e "${YELLOW}正在安装二维码生成工具...${NC}"
+        if command -v apt &> /dev/null; then
+            apt update && apt install -y qrencode
+        elif command -v yum &> /dev/null; then
+            yum install -y qrencode
+        else
+            echo -e "${RED}无法自动安装qrencode，请手动安装${NC}"
+            return
+        fi
+    fi
+    
+    UUID=${UUID:-$(cat /proc/sys/kernel/random/uuid)}
+    VMESS_LINK="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"zhakil-V2Ray\",\"add\":\"$SERVER_IP\",\"port\":\"10001\",\"id\":\"$UUID\",\"aid\":\"64\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/ray\",\"tls\":\"\"}" | base64 -w 0)"
+    
+    echo -e "${GREEN}生成V2Ray配置二维码:${NC}"
+    echo
+    qrencode -t ansiutf8 "$VMESS_LINK"
+    echo
+    
+    echo -e "${BLUE}扫码说明:${NC}"
+    echo "1. 使用手机V2Ray客户端扫描上方二维码"
+    echo "2. 自动导入服务器配置"
+    echo "3. 连接即可使用"
+    
+    # 保存二维码到文件
+    qrencode -t PNG -o /tmp/v2ray-qrcode.png "$VMESS_LINK"
+    echo -e "${GREEN}二维码图片已保存到: ${YELLOW}/tmp/v2ray-qrcode.png${NC}"
+}
+
+# 批量配置生成
+batch_config_generation() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║            ${WHITE}批量配置生成${CYAN}               ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    echo -e "${GREEN}正在生成所有配置文件...${NC}"
+    
+    # 创建配置目录
+    CONFIG_DIR="/tmp/vpn-configs-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$CONFIG_DIR"
+    
+    # 生成所有配置
+    echo -e "${BLUE}[1/5]${NC} 生成V2Ray配置..."
+    generate_v2ray_config > /dev/null
+    cp /tmp/v2ray-client.json "$CONFIG_DIR/"
+    
+    echo -e "${BLUE}[2/5]${NC} 生成Clash配置..."
+    generate_clash_config > /dev/null
+    cp /tmp/clash-client.yaml "$CONFIG_DIR/"
+    
+    echo -e "${BLUE}[3/5]${NC} 生成Hysteria配置..."
+    generate_hysteria_config > /dev/null
+    cp /tmp/hysteria-client.yaml "$CONFIG_DIR/"
+    
+    echo -e "${BLUE}[4/5]${NC} 生成分享链接..."
+    generate_share_links > /dev/null
+    cp /tmp/share-links.txt "$CONFIG_DIR/"
+    
+    echo -e "${BLUE}[5/5]${NC} 生成订阅信息..."
+    generate_subscription > /dev/null
+    cp /tmp/subscription-info.txt "$CONFIG_DIR/"
+    
+    # 生成README
+    cat > "$CONFIG_DIR/README.md" << EOF
+# zhakil科技箱 VPN配置包
+
+## 配置文件说明
+
+### V2Ray配置
+- **文件**: v2ray-client.json
+- **适用**: V2RayN, V2RayNG, V2Ray核心
+- **协议**: VMESS over WebSocket
+
+### Clash配置  
+- **文件**: clash-client.yaml
+- **适用**: Clash for Windows, ClashX, Clash for Android
+- **功能**: 自动选择、故障转移、负载均衡
+
+### Hysteria配置
+- **文件**: hysteria-client.yaml  
+- **适用**: Hysteria客户端
+- **协议**: UDP over QUIC
+
+### 分享链接
+- **文件**: share-links.txt
+- **内容**: VMESS链接、Hysteria链接、订阅链接
+- **用途**: 直接导入客户端
+
+### 订阅信息
+- **文件**: subscription-info.txt
+- **用途**: 客户端订阅更新
+
+## 服务器信息
+- **IP地址**: $SERVER_IP
+- **生成时间**: $(date)
+- **技术支持**: zhakil科技箱 v4.0.0
+
+## 使用建议
+1. 根据设备选择对应配置文件
+2. 优先使用Clash配置（功能最完整）
+3. 移动设备推荐使用分享链接导入
+4. 定期更新订阅获取最新配置
+EOF
+    
+    echo -e "${GREEN}批量配置生成完成！${NC}"
+    echo -e "${YELLOW}配置目录: ${GREEN}$CONFIG_DIR${NC}"
+    echo
+    echo -e "${BLUE}包含文件:${NC}"
+    ls -la "$CONFIG_DIR"
+    
+    # 创建打包文件
+    cd /tmp
+    tar -czf "vpn-configs-$(date +%Y%m%d-%H%M%S).tar.gz" "$(basename "$CONFIG_DIR")"
+    echo -e "${GREEN}配置包已打包: ${YELLOW}/tmp/vpn-configs-*.tar.gz${NC}"
+}
+
+# 导出所有配置
+export_all_configs() {
+    echo -e "${GREEN}正在导出所有配置...${NC}"
+    batch_config_generation
+}
+
 # 一些辅助函数的简单实现
-generate_v2ray_links() { echo -e "${YELLOW}V2Ray链接生成功能开发中...${NC}"; }
 add_v2ray_user() { echo -e "${YELLOW}V2Ray用户添加功能开发中...${NC}"; }
 remove_v2ray_user() { echo -e "${YELLOW}V2Ray用户删除功能开发中...${NC}"; }
 show_v2ray_traffic() { echo -e "${YELLOW}V2Ray流量统计功能开发中...${NC}"; }
 show_clash_traffic() { echo -e "${YELLOW}Clash流量统计功能开发中...${NC}"; }
-generate_hysteria_config() { echo -e "${YELLOW}Hysteria配置生成功能开发中...${NC}"; }
 hysteria_user_management() { echo -e "${YELLOW}Hysteria用户管理功能开发中...${NC}"; }
 show_hysteria_traffic() { echo -e "${YELLOW}Hysteria流量统计功能开发中...${NC}"; }
 list_all_nodes() { echo -e "${YELLOW}节点列表功能开发中...${NC}"; }
@@ -634,7 +1264,7 @@ main() {
             4) echo -e "${YELLOW}Nginx管理功能开发中...${NC}"; sleep 2 ;;
             5) node_management ;;
             6) user_management ;;
-            7) echo -e "${YELLOW}配置生成功能开发中...${NC}"; sleep 2 ;;
+            7) config_generator ;;
             8) echo -e "${YELLOW}订阅管理功能开发中...${NC}"; sleep 2 ;;
             9) traffic_monitoring ;;
             10) echo -e "${YELLOW}连接状态功能开发中...${NC}"; sleep 2 ;;
