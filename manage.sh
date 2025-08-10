@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# VPS代理管理系统 - 交互式管理界面
-# Ubuntu系统专用管理工具 v4.0.0
-# 命令行菜单式操作界面
+# VPS代理管理系统 - 专业管理界面
+# zhakil科技箱 VPN代理管理专用工具 v4.0.0
+# 专注于代理服务管理和配置
 
 set -e
 
@@ -24,6 +24,19 @@ get_system_info() {
     LOAD_AVG=$(uptime | awk -F'load average:' '{print $2}' | xargs)
     MEMORY_USAGE=$(free -h | awk 'NR==2{printf "%.1f%%", $3*100/$2}')
     DISK_USAGE=$(df -h / | awk 'NR==2{print $5}')
+    
+    # VPN服务状态
+    if command -v docker &> /dev/null && [[ -f docker-compose.yml ]]; then
+        V2RAY_STATUS=$(docker-compose ps v2ray-core 2>/dev/null | grep -q "Up" && echo "运行中" || echo "已停止")
+        CLASH_STATUS=$(docker-compose ps clash-core 2>/dev/null | grep -q "Up" && echo "运行中" || echo "已停止")
+        HYSTERIA_STATUS=$(docker-compose ps hysteria-core 2>/dev/null | grep -q "Up" && echo "运行中" || echo "已停止")
+        NGINX_STATUS=$(docker-compose ps nginx 2>/dev/null | grep -q "Up" && echo "运行中" || echo "已停止")
+    else
+        V2RAY_STATUS="未部署"
+        CLASH_STATUS="未部署"
+        HYSTERIA_STATUS="未部署"
+        NGINX_STATUS="未部署"
+    fi
 }
 
 # 显示主菜单
@@ -31,199 +44,332 @@ show_main_menu() {
     clear
     get_system_info
     
-    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║           ${WHITE}VPS代理管理系统${CYAN}                ║${NC}"
-    echo -e "${CYAN}║         ${YELLOW}zhakil科技箱 v4.0.0${CYAN}            ║${NC}"
-    echo -e "${CYAN}║     ${GREEN}命令行菜单操作界面${CYAN}                  ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║                ${WHITE}VPS代理管理系统${CYAN}                     ║${NC}"
+    echo -e "${CYAN}║              ${YELLOW}zhakil科技箱 v4.0.0${CYAN}                  ║${NC}"
+    echo -e "${CYAN}║            ${GREEN}专业VPN代理服务管理平台${CYAN}               ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
     echo
-    echo -e "${BLUE}服务器IP: ${GREEN}$SERVER_IP${NC}    ${BLUE}系统: ${GREEN}$SYSTEM_VERSION${NC}"
-    echo -e "${BLUE}运行时间: ${GREEN}$UPTIME${NC}"
-    echo -e "${BLUE}负载: ${GREEN}$LOAD_AVG${NC}    ${BLUE}内存: ${GREEN}$MEMORY_USAGE${NC}    ${BLUE}磁盘: ${GREEN}$DISK_USAGE${NC}"
+    echo -e "${BLUE}服务器信息: ${GREEN}$SERVER_IP${NC}  ${BLUE}系统: ${GREEN}$SYSTEM_VERSION${NC}"
+    echo -e "${BLUE}运行时间: ${GREEN}$UPTIME${NC}  ${BLUE}负载: ${GREEN}$LOAD_AVG${NC}"
+    echo -e "${BLUE}内存: ${GREEN}$MEMORY_USAGE${NC}  ${BLUE}磁盘: ${GREEN}$DISK_USAGE${NC}"
     echo
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    echo -e " ${YELLOW}1.${NC}  系统信息查询"
-    echo -e " ${YELLOW}2.${NC}  服务管理"
-    echo -e " ${YELLOW}3.${NC}  服务清理"
-    echo -e " ${YELLOW}4.${NC}  基础工具"
-    echo -e " ${YELLOW}5.${NC}  BBR管理"
-    echo -e " ${YELLOW}6.${NC}  Docker管理"
-    echo -e " ${YELLOW}7.${NC}  WARP管理"
-    echo -e " ${YELLOW}8.${NC}  测试脚本合集"
-    echo -e " ${YELLOW}9.${NC}  甲骨文云脚本合集"
-    echo -e " ${YELLOW}10.${NC} 监控和日志"
-    echo -e " ${YELLOW}11.${NC} 应用市场"
-    echo -e " ${YELLOW}12.${NC} 后台工作区"
-    echo -e " ${YELLOW}13.${NC} 系统工具"
-    echo -e " ${YELLOW}14.${NC} 网络测试"
-    echo -e " ${YELLOW}15.${NC} 安全管理"
+    # 服务状态显示
+    echo -e "${CYAN}┌─────────────── ${WHITE}代理服务状态${CYAN} ───────────────┐${NC}"
+    printf "${CYAN}│${NC} V2Ray: %-12s Clash: %-12s ${CYAN}│${NC}\n" \
+           "$(echo -e "${V2RAY_STATUS}" | sed "s/运行中/${GREEN}运行中${NC}/;s/已停止/${RED}已停止${NC}/;s/未部署/${YELLOW}未部署${NC}/")" \
+           "$(echo -e "${CLASH_STATUS}" | sed "s/运行中/${GREEN}运行中${NC}/;s/已停止/${RED}已停止${NC}/;s/未部署/${YELLOW}未部署${NC}/")"
+    printf "${CYAN}│${NC} Hysteria: %-9s Nginx: %-12s ${CYAN}│${NC}\n" \
+           "$(echo -e "${HYSTERIA_STATUS}" | sed "s/运行中/${GREEN}运行中${NC}/;s/已停止/${RED}已停止${NC}/;s/未部署/${YELLOW}未部署${NC}/")" \
+           "$(echo -e "${NGINX_STATUS}" | sed "s/运行中/${GREEN}运行中${NC}/;s/已停止/${RED}已停止${NC}/;s/未部署/${YELLOW}未部署${NC}/")"
+    echo -e "${CYAN}└───────────────────────────────────────────────────┘${NC}"
+    echo
     
+    # 主菜单
+    echo -e "${CYAN}┌─────────────── ${WHITE}代理协议管理${CYAN} ───────────────┐${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}1.${NC} V2Ray管理        ${YELLOW}2.${NC} Clash管理        ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}3.${NC} Hysteria管理      ${YELLOW}4.${NC} Nginx管理        ${CYAN}│${NC}"
+    echo -e "${CYAN}└───────────────────────────────────────────────────┘${NC}"
     echo
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e " ${GREEN}I.${NC}   系统安装/重装"
-    echo -e " ${RED}U.${NC}   系统卸载"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e " ${GREEN}00.${NC} 脚本更新"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e " ${RED}0.${NC}  退出脚本"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}┌─────────────── ${WHITE}节点和用户管理${CYAN} ─────────────┐${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}5.${NC} 节点管理          ${YELLOW}6.${NC} 用户管理         ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}7.${NC} 配置生成          ${YELLOW}8.${NC} 订阅管理         ${CYAN}│${NC}"
+    echo -e "${CYAN}└───────────────────────────────────────────────────┘${NC}"
     echo
-    echo -ne "${WHITE}请输入你的选择: ${NC}"
+    echo -e "${CYAN}┌─────────────── ${WHITE}监控和维护${CYAN} ─────────────────┐${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}9.${NC} 流量监控          ${YELLOW}10.${NC} 连接状态        ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}11.${NC} 日志查看         ${YELLOW}12.${NC} 性能优化        ${CYAN}│${NC}"
+    echo -e "${CYAN}└───────────────────────────────────────────────────┘${NC}"
+    echo
+    echo -e "${CYAN}┌─────────────── ${WHITE}系统管理${CYAN} ───────────────────┐${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}13.${NC} 系统信息         ${YELLOW}14.${NC} 安全设置        ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}15.${NC} 备份恢复         ${YELLOW}16.${NC} 证书管理        ${CYAN}│${NC}"
+    echo -e "${CYAN}└───────────────────────────────────────────────────┘${NC}"
+    echo
+    echo -e "${CYAN}┌─────────────── ${WHITE}部署选项${CYAN} ───────────────────┐${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}I.${NC} 系统安装/重装     ${RED}U.${NC} 系统卸载         ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${BLUE}00.${NC} 脚本更新         ${RED}0.${NC} 退出程序         ${CYAN}│${NC}"
+    echo -e "${CYAN}└───────────────────────────────────────────────────┘${NC}"
+    echo
+    echo -ne "${WHITE}请选择功能 [1-16/I/U/00/0]: ${NC}"
 }
 
-# 系统信息查询
-system_info() {
+# V2Ray管理
+v2ray_management() {
     clear
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}系统信息查询${CYAN}               ║${NC}"
+    echo -e "${CYAN}║              ${WHITE}V2Ray 管理${CYAN}                 ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo
     
-    echo -e "${YELLOW}基本信息:${NC}"
-    echo -e "  服务器IP: ${GREEN}$(curl -s ifconfig.me)${NC}"
-    echo -e "  系统版本: ${GREEN}$(lsb_release -d | cut -f2)${NC}"
-    echo -e "  内核版本: ${GREEN}$(uname -r)${NC}"
-    echo -e "  运行时间: ${GREEN}$(uptime -p)${NC}"
-    echo
-    
-    echo -e "${YELLOW}资源使用:${NC}"
-    echo -e "  CPU使用率: ${GREEN}$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)%${NC}"
-    echo -e "  内存使用: ${GREEN}$(free -h | awk 'NR==2{printf "%s/%s (%.1f%%)", $3,$2,$3*100/$2}')${NC}"
-    echo -e "  磁盘使用: ${GREEN}$(df -h / | awk 'NR==2{printf "%s/%s (%s)", $3,$2,$5}')${NC}"
-    echo -e "  系统负载: ${GREEN}$(uptime | awk -F'load average:' '{print $2}')${NC}"
-    echo
-    
-    echo -e "${YELLOW}网络信息:${NC}"
-    echo -e "  网卡信息: ${GREEN}$(ip route | grep default | awk '{print $5}')${NC}"
-    echo -e "  DNS服务器: ${GREEN}$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}' | head -1)${NC}"
-    echo
-    
-    if command -v docker &> /dev/null; then
-        echo -e "${YELLOW}Docker状态:${NC}"
-        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -10
-        echo
+    # 检查V2Ray状态
+    if command -v docker &> /dev/null && [[ -f docker-compose.yml ]]; then
+        V2RAY_STATUS=$(docker-compose ps v2ray-core 2>/dev/null | grep -q "Up" && echo "运行中" || echo "已停止")
+        echo -e "${BLUE}当前状态: ${GREEN}$V2RAY_STATUS${NC}"
+        
+        if [[ "$V2RAY_STATUS" == "运行中" ]]; then
+            echo -e "${BLUE}监听端口: ${GREEN}10001-10020${NC}"
+            echo -e "${BLUE}配置文件: ${GREEN}/opt/vpn-proxy/protocol-configs/v2ray/config.json${NC}"
+        fi
+    else
+        echo -e "${RED}Docker未安装或配置文件不存在${NC}"
     fi
-    
-    echo -ne "${WHITE}按回车键返回主菜单...${NC}"
-    read
-}
-
-# 服务管理
-service_management() {
-    clear
-    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}服务管理中心${CYAN}               ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo
     
-    echo -e " ${YELLOW}1.${NC} 查看服务状态"
-    echo -e " ${YELLOW}2.${NC} 启动所有服务"
-    echo -e " ${YELLOW}3.${NC} 停止所有服务"
-    echo -e " ${YELLOW}4.${NC} 重启所有服务"
-    echo -e " ${YELLOW}5.${NC} 查看服务日志"
-    echo -e " ${YELLOW}6.${NC} 单独管理服务"
+    echo -e " ${YELLOW}1.${NC} 启动V2Ray服务"
+    echo -e " ${YELLOW}2.${NC} 停止V2Ray服务"
+    echo -e " ${YELLOW}3.${NC} 重启V2Ray服务"
+    echo -e " ${YELLOW}4.${NC} 查看V2Ray日志"
+    echo -e " ${YELLOW}5.${NC} 编辑V2Ray配置"
+    echo -e " ${YELLOW}6.${NC} 生成V2Ray链接"
+    echo -e " ${YELLOW}7.${NC} 添加V2Ray用户"
+    echo -e " ${YELLOW}8.${NC} 删除V2Ray用户"
+    echo -e " ${YELLOW}9.${NC} V2Ray流量统计"
     echo -e " ${RED}0.${NC} 返回主菜单"
     echo
     echo -ne "${WHITE}请选择操作: ${NC}"
     
     read choice
     case $choice in
-        1) docker-compose ps; echo; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        2) echo -e "${GREEN}正在启动所有服务...${NC}"; docker-compose up -d; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        3) echo -e "${YELLOW}正在停止所有服务...${NC}"; docker-compose down; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        4) echo -e "${BLUE}正在重启所有服务...${NC}"; docker-compose restart; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        5) docker-compose logs --tail=50; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        6) single_service_management ;;
+        1) docker-compose start v2ray-core; echo -e "${GREEN}V2Ray已启动${NC}" ;;
+        2) docker-compose stop v2ray-core; echo -e "${YELLOW}V2Ray已停止${NC}" ;;
+        3) docker-compose restart v2ray-core; echo -e "${BLUE}V2Ray已重启${NC}" ;;
+        4) docker-compose logs --tail=100 v2ray-core ;;
+        5) 
+            echo -e "${YELLOW}V2Ray配置编辑功能开发中...${NC}"
+            echo -e "${BLUE}配置文件位置: /opt/vpn-proxy/protocol-configs/v2ray/config.json${NC}"
+            ;;
+        6) generate_v2ray_links ;;
+        7) add_v2ray_user ;;
+        8) remove_v2ray_user ;;
+        9) show_v2ray_traffic ;;
         0) return ;;
         *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
     esac
-    service_management
+    
+    echo -ne "${WHITE}按回车键继续...${NC}"
+    read
+    v2ray_management
 }
 
-# 单独服务管理
-single_service_management() {
+# Clash管理
+clash_management() {
     clear
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║             ${WHITE}单独服务管理${CYAN}                ║${NC}"
+    echo -e "${CYAN}║              ${WHITE}Clash 管理${CYAN}                 ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo
     
-    echo -e "${YELLOW}可用服务:${NC}"
-    services=(
-        "nginx" "api-gateway" "rule-engine" "config-manager"
-        "v2ray-core" "clash-core" "hysteria-core"
-        "postgres" "redis" "influxdb"
-        "prometheus" "grafana"
-    )
-    
-    for i in "${!services[@]}"; do
-        echo -e " ${YELLOW}$((i+1)).${NC} ${services[i]}"
-    done
-    echo -e " ${RED}0.${NC} 返回上级菜单"
-    echo
-    echo -ne "${WHITE}请选择要管理的服务: ${NC}"
-    
-    read choice
-    if [[ $choice -ge 1 && $choice -le ${#services[@]} ]]; then
-        service_name=${services[$((choice-1))]}
-        manage_single_service $service_name
-    elif [[ $choice -eq 0 ]]; then
-        return
+    # 检查Clash状态
+    if command -v docker &> /dev/null && [[ -f docker-compose.yml ]]; then
+        CLASH_STATUS=$(docker-compose ps clash-core 2>/dev/null | grep -q "Up" && echo "运行中" || echo "已停止")
+        echo -e "${BLUE}当前状态: ${GREEN}$CLASH_STATUS${NC}"
+        
+        if [[ "$CLASH_STATUS" == "运行中" ]]; then
+            echo -e "${BLUE}HTTP端口: ${GREEN}7890${NC}"
+            echo -e "${BLUE}SOCKS端口: ${GREEN}7891${NC}"
+            echo -e "${BLUE}控制面板: ${GREEN}http://$SERVER_IP:9090${NC}"
+        fi
     else
-        echo -e "${RED}无效选择${NC}"; sleep 1
-        single_service_management
+        echo -e "${RED}Docker未安装或配置文件不存在${NC}"
     fi
-}
-
-# 管理单个服务
-manage_single_service() {
-    local service=$1
-    clear
-    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║            ${WHITE}管理服务: $service${CYAN}            ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo
     
-    echo -e " ${YELLOW}1.${NC} 启动服务"
-    echo -e " ${YELLOW}2.${NC} 停止服务"
-    echo -e " ${YELLOW}3.${NC} 重启服务"
-    echo -e " ${YELLOW}4.${NC} 查看日志"
-    echo -e " ${YELLOW}5.${NC} 查看状态"
-    echo -e " ${RED}0.${NC} 返回服务列表"
+    echo -e " ${YELLOW}1.${NC} 启动Clash服务"
+    echo -e " ${YELLOW}2.${NC} 停止Clash服务"
+    echo -e " ${YELLOW}3.${NC} 重启Clash服务"
+    echo -e " ${YELLOW}4.${NC} 查看Clash日志"
+    echo -e " ${YELLOW}5.${NC} 编辑Clash配置"
+    echo -e " ${YELLOW}6.${NC} 更新规则集"
+    echo -e " ${YELLOW}7.${NC} 节点测速"
+    echo -e " ${YELLOW}8.${NC} 流量统计"
+    echo -e " ${YELLOW}9.${NC} 打开Web面板"
+    echo -e " ${RED}0.${NC} 返回主菜单"
     echo
     echo -ne "${WHITE}请选择操作: ${NC}"
     
     read choice
     case $choice in
-        1) docker-compose start $service; echo -e "${GREEN}服务已启动${NC}" ;;
-        2) docker-compose stop $service; echo -e "${YELLOW}服务已停止${NC}" ;;
-        3) docker-compose restart $service; echo -e "${BLUE}服务已重启${NC}" ;;
-        4) docker-compose logs --tail=100 $service ;;
-        5) docker-compose ps $service ;;
-        0) single_service_management; return ;;
-        *) echo -e "${RED}无效选择${NC}" ;;
+        1) docker-compose start clash-core; echo -e "${GREEN}Clash已启动${NC}" ;;
+        2) docker-compose stop clash-core; echo -e "${YELLOW}Clash已停止${NC}" ;;
+        3) docker-compose restart clash-core; echo -e "${BLUE}Clash已重启${NC}" ;;
+        4) docker-compose logs --tail=100 clash-core ;;
+        5) 
+            echo -e "${YELLOW}Clash配置编辑功能开发中...${NC}"
+            echo -e "${BLUE}配置文件位置: /opt/vpn-proxy/protocol-configs/clash/config.yaml${NC}"
+            ;;
+        6) echo -e "${YELLOW}规则集更新功能开发中...${NC}" ;;
+        7) echo -e "${YELLOW}节点测速功能开发中...${NC}" ;;
+        8) show_clash_traffic ;;
+        9) 
+            echo -e "${GREEN}Clash Web面板地址: http://$SERVER_IP:9090${NC}"
+            echo -e "${BLUE}请在浏览器中访问上述地址${NC}"
+            ;;
+        0) return ;;
+        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
     esac
     
     echo -ne "${WHITE}按回车键继续...${NC}"
     read
-    manage_single_service $service
+    clash_management
 }
 
-# 监控和日志
-monitoring_logs() {
+# Hysteria管理
+hysteria_management() {
     clear
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}监控和日志${CYAN}                 ║${NC}"
+    echo -e "${CYAN}║            ${WHITE}Hysteria 管理${CYAN}               ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo
     
-    echo -e " ${YELLOW}1.${NC} 实时监控面板"
-    echo -e " ${YELLOW}2.${NC} 系统资源监控"
-    echo -e " ${YELLOW}3.${NC} Docker状态监控"
-    echo -e " ${YELLOW}4.${NC} 网络连接监控"
-    echo -e " ${YELLOW}5.${NC} 服务日志查看"
-    echo -e " ${YELLOW}6.${NC} 错误日志分析"
+    # 检查Hysteria状态
+    if command -v docker &> /dev/null && [[ -f docker-compose.yml ]]; then
+        HYSTERIA_STATUS=$(docker-compose ps hysteria-core 2>/dev/null | grep -q "Up" && echo "运行中" || echo "已停止")
+        echo -e "${BLUE}当前状态: ${GREEN}$HYSTERIA_STATUS${NC}"
+        
+        if [[ "$HYSTERIA_STATUS" == "运行中" ]]; then
+            echo -e "${BLUE}UDP端口: ${GREEN}36712${NC}"
+            echo -e "${BLUE}协议版本: ${GREEN}Hysteria v1/v2${NC}"
+        fi
+    else
+        echo -e "${RED}Docker未安装或配置文件不存在${NC}"
+    fi
+    echo
+    
+    echo -e " ${YELLOW}1.${NC} 启动Hysteria服务"
+    echo -e " ${YELLOW}2.${NC} 停止Hysteria服务"
+    echo -e " ${YELLOW}3.${NC} 重启Hysteria服务"
+    echo -e " ${YELLOW}4.${NC} 查看Hysteria日志"
+    echo -e " ${YELLOW}5.${NC} 编辑Hysteria配置"
+    echo -e " ${YELLOW}6.${NC} 生成客户端配置"
+    echo -e " ${YELLOW}7.${NC} 用户管理"
+    echo -e " ${YELLOW}8.${NC} 流量统计"
+    echo -e " ${YELLOW}9.${NC} 端口检测"
+    echo -e " ${RED}0.${NC} 返回主菜单"
+    echo
+    echo -ne "${WHITE}请选择操作: ${NC}"
+    
+    read choice
+    case $choice in
+        1) docker-compose start hysteria-core; echo -e "${GREEN}Hysteria已启动${NC}" ;;
+        2) docker-compose stop hysteria-core; echo -e "${YELLOW}Hysteria已停止${NC}" ;;
+        3) docker-compose restart hysteria-core; echo -e "${BLUE}Hysteria已重启${NC}" ;;
+        4) docker-compose logs --tail=100 hysteria-core ;;
+        5) 
+            echo -e "${YELLOW}Hysteria配置编辑功能开发中...${NC}"
+            echo -e "${BLUE}配置文件位置: /opt/vpn-proxy/protocol-configs/hysteria/config.yaml${NC}"
+            ;;
+        6) generate_hysteria_config ;;
+        7) hysteria_user_management ;;
+        8) show_hysteria_traffic ;;
+        9) 
+            echo -e "${GREEN}测试Hysteria端口连通性...${NC}"
+            nc -u -z -v $SERVER_IP 36712 && echo -e "${GREEN}端口36712连通${NC}" || echo -e "${RED}端口36712不通${NC}"
+            ;;
+        0) return ;;
+        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
+    esac
+    
+    echo -ne "${WHITE}按回车键继续...${NC}"
+    read
+    hysteria_management
+}
+
+# 节点管理
+node_management() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}节点管理${CYAN}                   ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    echo -e " ${YELLOW}1.${NC} 查看所有节点"
+    echo -e " ${YELLOW}2.${NC} 添加新节点"
+    echo -e " ${YELLOW}3.${NC} 删除节点"
+    echo -e " ${YELLOW}4.${NC} 编辑节点信息"
+    echo -e " ${YELLOW}5.${NC} 节点测速"
+    echo -e " ${YELLOW}6.${NC} 节点负载均衡"
+    echo -e " ${YELLOW}7.${NC} 导入节点配置"
+    echo -e " ${YELLOW}8.${NC} 导出节点配置"
+    echo -e " ${RED}0.${NC} 返回主菜单"
+    echo
+    echo -ne "${WHITE}请选择操作: ${NC}"
+    
+    read choice
+    case $choice in
+        1) list_all_nodes ;;
+        2) add_new_node ;;
+        3) remove_node ;;
+        4) edit_node ;;
+        5) test_nodes_speed ;;
+        6) echo -e "${YELLOW}负载均衡功能开发中...${NC}" ;;
+        7) import_node_config ;;
+        8) export_node_config ;;
+        0) return ;;
+        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
+    esac
+    
+    echo -ne "${WHITE}按回车键继续...${NC}"
+    read
+    node_management
+}
+
+# 用户管理
+user_management() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}用户管理${CYAN}                   ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    echo -e " ${YELLOW}1.${NC} 查看所有用户"
+    echo -e " ${YELLOW}2.${NC} 添加新用户"
+    echo -e " ${YELLOW}3.${NC} 删除用户"
+    echo -e " ${YELLOW}4.${NC} 修改用户信息"
+    echo -e " ${YELLOW}5.${NC} 重置用户密码"
+    echo -e " ${YELLOW}6.${NC} 用户流量统计"
+    echo -e " ${YELLOW}7.${NC} 用户连接状态"
+    echo -e " ${YELLOW}8.${NC} 批量用户管理"
+    echo -e " ${RED}0.${NC} 返回主菜单"
+    echo
+    echo -ne "${WHITE}请选择操作: ${NC}"
+    
+    read choice
+    case $choice in
+        1) list_all_users ;;
+        2) add_new_user ;;
+        3) remove_user ;;
+        4) edit_user ;;
+        5) reset_user_password ;;
+        6) show_user_traffic ;;
+        7) show_user_connections ;;
+        8) batch_user_management ;;
+        0) return ;;
+        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
+    esac
+    
+    echo -ne "${WHITE}按回车键继续...${NC}"
+    read
+    user_management
+}
+
+# 流量监控
+traffic_monitoring() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              ${WHITE}流量监控${CYAN}                   ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo
+    
+    echo -e " ${YELLOW}1.${NC} 实时流量监控"
+    echo -e " ${YELLOW}2.${NC} 今日流量统计"
+    echo -e " ${YELLOW}3.${NC} 本月流量统计"
+    echo -e " ${YELLOW}4.${NC} 用户流量排行"
+    echo -e " ${YELLOW}5.${NC} 协议流量分析"
+    echo -e " ${YELLOW}6.${NC} 流量图表显示"
+    echo -e " ${YELLOW}7.${NC} 导出流量报告"
+    echo -e " ${YELLOW}8.${NC} 流量预警设置"
     echo -e " ${RED}0.${NC} 返回主菜单"
     echo
     echo -ne "${WHITE}请选择功能: ${NC}"
@@ -231,123 +377,72 @@ monitoring_logs() {
     read choice
     case $choice in
         1) 
-            echo -e "${GREEN}启动实时监控...${NC}"
-            echo -e "${BLUE}Grafana面板: ${GREEN}http://$(curl -s ifconfig.me):3000${NC}"
-            echo -e "${BLUE}Prometheus: ${GREEN}http://$(curl -s ifconfig.me):9090${NC}"
+            echo -e "${GREEN}启动实时流量监控...${NC}"
+            echo -e "${BLUE}使用 Ctrl+C 退出监控${NC}"
+            watch -n 1 'cat /proc/net/dev'
             ;;
-        2) htop 2>/dev/null || top ;;
-        3) watch docker stats ;;
-        4) watch ss -tuln ;;
-        5) docker-compose logs -f --tail=100 ;;
+        2) show_daily_traffic ;;
+        3) show_monthly_traffic ;;
+        4) show_user_traffic_ranking ;;
+        5) show_protocol_traffic ;;
         6) 
-            echo -e "${YELLOW}分析错误日志...${NC}"
-            docker-compose logs | grep -i error | tail -20
+            echo -e "${GREEN}流量图表功能...${NC}"
+            echo -e "${BLUE}Grafana面板: http://$SERVER_IP:3000${NC}"
             ;;
+        7) export_traffic_report ;;
+        8) set_traffic_alerts ;;
         0) return ;;
         *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
     esac
     
     echo -ne "${WHITE}按回车键继续...${NC}"
     read
-    monitoring_logs
+    traffic_monitoring
 }
 
-# Docker管理
-docker_management() {
+# 系统信息
+system_information() {
     clear
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}Docker管理${CYAN}                 ║${NC}"
+    echo -e "${CYAN}║              ${WHITE}系统信息${CYAN}                   ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo
     
-    echo -e " ${YELLOW}1.${NC} Docker状态查看"
-    echo -e " ${YELLOW}2.${NC} 镜像管理"
-    echo -e " ${YELLOW}3.${NC} 容器管理"
-    echo -e " ${YELLOW}4.${NC} 网络管理"
-    echo -e " ${YELLOW}5.${NC} 数据卷管理"
-    echo -e " ${YELLOW}6.${NC} 系统清理"
-    echo -e " ${YELLOW}7.${NC} Docker更新"
-    echo -e " ${RED}0.${NC} 返回主菜单"
+    echo -e "${YELLOW}服务器信息:${NC}"
+    echo -e "  公网IP: ${GREEN}$(curl -s ifconfig.me)${NC}"
+    echo -e "  系统版本: ${GREEN}$(lsb_release -d | cut -f2)${NC}"
+    echo -e "  内核版本: ${GREEN}$(uname -r)${NC}"
+    echo -e "  运行时间: ${GREEN}$(uptime -p)${NC}"
+    echo -e "  系统架构: ${GREEN}$(uname -m)${NC}"
     echo
-    echo -ne "${WHITE}请选择操作: ${NC}"
     
-    read choice
-    case $choice in
-        1) 
-            docker version
-            echo
-            docker info | head -20
-            ;;
-        2) docker images ;;
-        3) docker ps -a ;;
-        4) docker network ls ;;
-        5) docker volume ls ;;
-        6) 
-            echo -e "${YELLOW}清理Docker系统...${NC}"
-            docker system prune -f
-            ;;
-        7) 
-            echo -e "${BLUE}更新Docker...${NC}"
-            apt update && apt upgrade docker-ce -y
-            ;;
-        0) return ;;
-        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
-    esac
+    echo -e "${YELLOW}硬件资源:${NC}"
+    echo -e "  CPU型号: ${GREEN}$(cat /proc/cpuinfo | grep 'model name' | head -1 | cut -d: -f2 | xargs)${NC}"
+    echo -e "  CPU核心: ${GREEN}$(nproc) 核心${NC}"
+    echo -e "  内存信息: ${GREEN}$(free -h | awk 'NR==2{printf "%s/%s (%.1f%%)", $3,$2,$3*100/$2}')${NC}"
+    echo -e "  磁盘信息: ${GREEN}$(df -h / | awk 'NR==2{printf "%s/%s (%s)", $3,$2,$5}')${NC}"
+    echo -e "  系统负载: ${GREEN}$(uptime | awk -F'load average:' '{print $2}')${NC}"
+    echo
     
-    echo -ne "${WHITE}按回车键继续...${NC}"
+    echo -e "${YELLOW}网络信息:${NC}"
+    echo -e "  网络接口: ${GREEN}$(ip route | grep default | awk '{print $5}')${NC}"
+    echo -e "  DNS服务器: ${GREEN}$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}' | head -1)${NC}"
+    echo
+    
+    echo -e "${YELLOW}代理服务:${NC}"
+    if command -v docker &> /dev/null && [[ -f docker-compose.yml ]]; then
+        echo -e "  Docker版本: ${GREEN}$(docker --version | cut -d' ' -f3 | cut -d',' -f1)${NC}"
+        echo -e "  服务状态:"
+        docker-compose ps --format "table {{.Name}}\t{{.Status}}" | head -10
+    else
+        echo -e "  ${RED}Docker环境未安装${NC}"
+    fi
+    
+    echo -ne "${WHITE}按回车键返回主菜单...${NC}"
     read
-    docker_management
 }
 
-# 系统工具
-system_tools() {
-    clear
-    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}系统工具箱${CYAN}                 ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
-    echo
-    
-    echo -e " ${YELLOW}1.${NC} 系统更新升级"
-    echo -e " ${YELLOW}2.${NC} 防火墙管理"
-    echo -e " ${YELLOW}3.${NC} SSH配置"
-    echo -e " ${YELLOW}4.${NC} 时区设置"
-    echo -e " ${YELLOW}5.${NC} 定时任务"
-    echo -e " ${YELLOW}6.${NC} 系统优化"
-    echo -e " ${YELLOW}7.${NC} 备份恢复"
-    echo -e " ${YELLOW}8.${NC} 安全检查"
-    echo -e " ${RED}0.${NC} 返回主菜单"
-    echo
-    echo -ne "${WHITE}请选择工具: ${NC}"
-    
-    read choice
-    case $choice in
-        1) 
-            echo -e "${GREEN}正在更新系统...${NC}"
-            apt update && apt upgrade -y
-            ;;
-        2) ufw status; echo; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        3) echo -e "${BLUE}SSH配置文件位置: ${GREEN}/etc/ssh/sshd_config${NC}" ;;
-        4) timedatectl; echo; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        5) crontab -l; echo; echo -ne "${WHITE}按回车键继续...${NC}"; read ;;
-        6) 
-            echo -e "${GREEN}执行系统优化...${NC}"
-            sysctl -p
-            ;;
-        7) echo -e "${YELLOW}备份功能开发中...${NC}" ;;
-        8) 
-            echo -e "${GREEN}执行安全检查...${NC}"
-            ss -tuln | grep LISTEN
-            ;;
-        0) return ;;
-        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
-    esac
-    
-    echo -ne "${WHITE}按回车键继续...${NC}"
-    read
-    system_tools
-}
-
-# 系统安装/重装
+# 安装系统
 install_system() {
     clear
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
@@ -355,10 +450,11 @@ install_system() {
     echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
     echo
     
-    echo -e " ${YELLOW}1.${NC} 全新安装系统"
+    echo -e " ${YELLOW}1.${NC} 全新安装完整版"
     echo -e " ${YELLOW}2.${NC} 重新安装系统"
-    echo -e " ${YELLOW}3.${NC} 安装轻量版"
-    echo -e " ${YELLOW}4.${NC} 从GitHub安装最新版"
+    echo -e " ${YELLOW}3.${NC} 安装轻量版本"
+    echo -e " ${YELLOW}4.${NC} 从GitHub安装"
+    echo -e " ${YELLOW}5.${NC} 更新现有安装"
     echo -e " ${RED}0.${NC} 返回主菜单"
     echo
     echo -ne "${WHITE}请选择安装方式: ${NC}"
@@ -366,7 +462,7 @@ install_system() {
     read choice
     case $choice in
         1)
-            echo -e "${GREEN}正在执行全新安装...${NC}"
+            echo -e "${GREEN}正在执行完整版安装...${NC}"
             if [[ -f "./deploy.sh" ]]; then
                 bash ./deploy.sh
             else
@@ -379,28 +475,24 @@ install_system() {
             read -p "确认继续? [y/N]: " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                if [[ -f "./uninstall.sh" ]]; then
-                    bash ./uninstall.sh --backup
-                fi
+                bash ./uninstall.sh --backup 2>/dev/null || true
                 sleep 2
-                if [[ -f "./deploy.sh" ]]; then
-                    bash ./deploy.sh
-                else
-                    bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/deploy.sh)
-                fi
+                bash ./deploy.sh 2>/dev/null || bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/deploy.sh)
             fi
             ;;
         3)
             echo -e "${BLUE}正在安装轻量版...${NC}"
-            if [[ -f "./install-lite.sh" ]]; then
-                bash ./install-lite.sh
-            else
-                bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/install-lite.sh)
-            fi
+            bash ./install-lite.sh 2>/dev/null || bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/install-lite.sh)
             ;;
         4)
             echo -e "${GREEN}正在从GitHub安装最新版...${NC}"
             bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/deploy.sh)
+            ;;
+        5)
+            echo -e "${BLUE}正在更新现有安装...${NC}"
+            git pull origin main 2>/dev/null || echo -e "${YELLOW}无法自动更新，请检查网络${NC}"
+            docker-compose pull
+            docker-compose up -d
             ;;
         0) return ;;
         *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
@@ -411,7 +503,7 @@ install_system() {
     install_system
 }
 
-# 系统卸载
+# 卸载系统
 uninstall_system() {
     clear
     echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
@@ -421,10 +513,11 @@ uninstall_system() {
     
     echo -e "${RED}警告: 这将完全删除VPS代理管理系统！${NC}"
     echo
-    echo -e " ${YELLOW}1.${NC} 备份后卸载"
+    echo -e " ${YELLOW}1.${NC} 备份后完全卸载"
     echo -e " ${YELLOW}2.${NC} 直接卸载（不备份）"
-    echo -e " ${YELLOW}3.${NC} 仅停止服务"
+    echo -e " ${YELLOW}3.${NC} 仅停止所有服务"
     echo -e " ${YELLOW}4.${NC} 清理Docker环境"
+    echo -e " ${YELLOW}5.${NC} 重置为默认配置"
     echo -e " ${RED}0.${NC} 返回主菜单"
     echo
     echo -ne "${WHITE}请选择卸载方式: ${NC}"
@@ -433,34 +526,32 @@ uninstall_system() {
     case $choice in
         1)
             echo -e "${GREEN}正在备份数据并卸载...${NC}"
-            if [[ -f "./uninstall.sh" ]]; then
-                bash ./uninstall.sh --backup
-            else
-                bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/uninstall.sh) --backup
-            fi
+            bash ./uninstall.sh --backup 2>/dev/null || bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/uninstall.sh) --backup
             ;;
         2)
             echo -e "${RED}正在直接卸载...${NC}"
             read -p "$(echo -e "${RED}确认删除所有数据? [y/N]: ${NC}")" -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                if [[ -f "./uninstall.sh" ]]; then
-                    bash ./uninstall.sh
-                else
-                    bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/uninstall.sh)
-                fi
+                bash ./uninstall.sh 2>/dev/null || bash <(curl -fsSL https://raw.githubusercontent.com/zhakil/vpn/main/uninstall.sh)
             fi
             ;;
         3)
             echo -e "${YELLOW}正在停止所有服务...${NC}"
             docker-compose down
-            echo -e "${GREEN}服务已停止${NC}"
+            echo -e "${GREEN}所有服务已停止${NC}"
             ;;
         4)
             echo -e "${YELLOW}正在清理Docker环境...${NC}"
             docker system prune -af
             docker volume prune -f
             echo -e "${GREEN}Docker环境已清理${NC}"
+            ;;
+        5)
+            echo -e "${BLUE}正在重置配置...${NC}"
+            docker-compose down
+            rm -rf protocol-configs/*/
+            echo -e "${GREEN}配置已重置${NC}"
             ;;
         0) return ;;
         *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
@@ -469,100 +560,6 @@ uninstall_system() {
     echo -ne "${WHITE}按回车键继续...${NC}"
     read
     uninstall_system
-}
-
-# 网络测试
-network_test() {
-    clear
-    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}网络测试${CYAN}                   ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
-    echo
-    
-    echo -e " ${YELLOW}1.${NC} 网络延迟测试"
-    echo -e " ${YELLOW}2.${NC} 带宽速度测试"
-    echo -e " ${YELLOW}3.${NC} 路由追踪测试"
-    echo -e " ${YELLOW}4.${NC} DNS解析测试"
-    echo -e " ${YELLOW}5.${NC} 端口连通性测试"
-    echo -e " ${RED}0.${NC} 返回主菜单"
-    echo
-    echo -ne "${WHITE}请选择测试项目: ${NC}"
-    
-    read choice
-    case $choice in
-        1)
-            echo -e "${GREEN}正在测试网络延迟...${NC}"
-            ping -c 4 8.8.8.8
-            ping -c 4 1.1.1.1
-            ;;
-        2)
-            echo -e "${GREEN}正在测试带宽速度...${NC}"
-            curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python3
-            ;;
-        3)
-            echo -e "${GREEN}正在进行路由追踪...${NC}"
-            traceroute 8.8.8.8
-            ;;
-        4)
-            echo -e "${GREEN}正在测试DNS解析...${NC}"
-            nslookup google.com
-            nslookup github.com
-            ;;
-        5)
-            echo -e "${GREEN}正在测试端口连通性...${NC}"
-            ss -tuln
-            ;;
-        0) return ;;
-        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
-    esac
-    
-    echo -ne "${WHITE}按回车键继续...${NC}"
-    read
-    network_test
-}
-
-# 安全管理
-security_management() {
-    clear
-    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}安全管理${CYAN}                   ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
-    echo
-    
-    echo -e " ${YELLOW}1.${NC} 防火墙状态"
-    echo -e " ${YELLOW}2.${NC} SSH配置检查"
-    echo -e " ${YELLOW}3.${NC} 登录日志分析"
-    echo -e " ${YELLOW}4.${NC} 端口扫描检测"
-    echo -e " ${YELLOW}5.${NC} 系统安全加固"
-    echo -e " ${RED}0.${NC} 返回主菜单"
-    echo
-    echo -ne "${WHITE}请选择功能: ${NC}"
-    
-    read choice
-    case $choice in
-        1) ufw status verbose ;;
-        2) 
-            echo -e "${YELLOW}SSH配置信息:${NC}"
-            grep -E "Port|PermitRootLogin|PasswordAuthentication" /etc/ssh/sshd_config
-            ;;
-        3)
-            echo -e "${YELLOW}最近登录记录:${NC}"
-            last -n 20
-            ;;
-        4)
-            echo -e "${YELLOW}监听端口:${NC}"
-            ss -tuln
-            ;;
-        5)
-            echo -e "${GREEN}系统安全加固功能开发中...${NC}"
-            ;;
-        0) return ;;
-        *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
-    esac
-    
-    echo -ne "${WHITE}按回车键继续...${NC}"
-    read
-    security_management
 }
 
 # 脚本更新
@@ -580,7 +577,6 @@ update_script() {
     if [[ -f /tmp/manage_new.sh ]]; then
         cp /tmp/manage_new.sh ./manage.sh
         chmod +x ./manage.sh
-        # 如果是全局安装，也更新全局文件
         if [[ -f /usr/local/bin/zhakil-manage ]]; then
             cp ./manage.sh /usr/local/bin/zhakil-manage
         fi
@@ -588,11 +584,42 @@ update_script() {
     fi
     
     # 更新项目文件
-    git pull origin main 2>/dev/null || echo -e "${YELLOW}无法自动更新项目，请手动更新${NC}"
+    git pull origin main 2>/dev/null && echo -e "${GREEN}项目文件更新完成${NC}" || echo -e "${YELLOW}无法自动更新项目${NC}"
     
     echo -ne "${WHITE}按回车键继续...${NC}"
     read
 }
+
+# 一些辅助函数的简单实现
+generate_v2ray_links() { echo -e "${YELLOW}V2Ray链接生成功能开发中...${NC}"; }
+add_v2ray_user() { echo -e "${YELLOW}V2Ray用户添加功能开发中...${NC}"; }
+remove_v2ray_user() { echo -e "${YELLOW}V2Ray用户删除功能开发中...${NC}"; }
+show_v2ray_traffic() { echo -e "${YELLOW}V2Ray流量统计功能开发中...${NC}"; }
+show_clash_traffic() { echo -e "${YELLOW}Clash流量统计功能开发中...${NC}"; }
+generate_hysteria_config() { echo -e "${YELLOW}Hysteria配置生成功能开发中...${NC}"; }
+hysteria_user_management() { echo -e "${YELLOW}Hysteria用户管理功能开发中...${NC}"; }
+show_hysteria_traffic() { echo -e "${YELLOW}Hysteria流量统计功能开发中...${NC}"; }
+list_all_nodes() { echo -e "${YELLOW}节点列表功能开发中...${NC}"; }
+add_new_node() { echo -e "${YELLOW}添加节点功能开发中...${NC}"; }
+remove_node() { echo -e "${YELLOW}删除节点功能开发中...${NC}"; }
+edit_node() { echo -e "${YELLOW}编辑节点功能开发中...${NC}"; }
+test_nodes_speed() { echo -e "${YELLOW}节点测速功能开发中...${NC}"; }
+import_node_config() { echo -e "${YELLOW}导入配置功能开发中...${NC}"; }
+export_node_config() { echo -e "${YELLOW}导出配置功能开发中...${NC}"; }
+list_all_users() { echo -e "${YELLOW}用户列表功能开发中...${NC}"; }
+add_new_user() { echo -e "${YELLOW}添加用户功能开发中...${NC}"; }
+remove_user() { echo -e "${YELLOW}删除用户功能开发中...${NC}"; }
+edit_user() { echo -e "${YELLOW}编辑用户功能开发中...${NC}"; }
+reset_user_password() { echo -e "${YELLOW}重置密码功能开发中...${NC}"; }
+show_user_traffic() { echo -e "${YELLOW}用户流量功能开发中...${NC}"; }
+show_user_connections() { echo -e "${YELLOW}用户连接功能开发中...${NC}"; }
+batch_user_management() { echo -e "${YELLOW}批量管理功能开发中...${NC}"; }
+show_daily_traffic() { echo -e "${YELLOW}日流量统计功能开发中...${NC}"; }
+show_monthly_traffic() { echo -e "${YELLOW}月流量统计功能开发中...${NC}"; }
+show_user_traffic_ranking() { echo -e "${YELLOW}流量排行功能开发中...${NC}"; }
+show_protocol_traffic() { echo -e "${YELLOW}协议流量功能开发中...${NC}"; }
+export_traffic_report() { echo -e "${YELLOW}流量报告功能开发中...${NC}"; }
+set_traffic_alerts() { echo -e "${YELLOW}流量预警功能开发中...${NC}"; }
 
 # 主循环
 main() {
@@ -601,26 +628,27 @@ main() {
         read choice
         
         case $choice in
-            1) system_info ;;
-            2) service_management ;;
-            3) echo -e "${YELLOW}服务清理功能开发中...${NC}"; sleep 2 ;;
-            4) system_tools ;;
-            5) echo -e "${YELLOW}BBR管理功能开发中...${NC}"; sleep 2 ;;
-            6) docker_management ;;
-            7) echo -e "${YELLOW}WARP管理功能开发中...${NC}"; sleep 2 ;;
-            8) echo -e "${YELLOW}测试脚本合集开发中...${NC}"; sleep 2 ;;
-            9) echo -e "${YELLOW}甲骨文云脚本开发中...${NC}"; sleep 2 ;;
-            10) monitoring_logs ;;
-            11) echo -e "${YELLOW}应用市场开发中...${NC}"; sleep 2 ;;
-            12) echo -e "${YELLOW}后台工作区开发中...${NC}"; sleep 2 ;;
-            13) system_tools ;;
-            14) network_test ;;
-            15) security_management ;;
+            1) v2ray_management ;;
+            2) clash_management ;;
+            3) hysteria_management ;;
+            4) echo -e "${YELLOW}Nginx管理功能开发中...${NC}"; sleep 2 ;;
+            5) node_management ;;
+            6) user_management ;;
+            7) echo -e "${YELLOW}配置生成功能开发中...${NC}"; sleep 2 ;;
+            8) echo -e "${YELLOW}订阅管理功能开发中...${NC}"; sleep 2 ;;
+            9) traffic_monitoring ;;
+            10) echo -e "${YELLOW}连接状态功能开发中...${NC}"; sleep 2 ;;
+            11) echo -e "${YELLOW}日志查看功能开发中...${NC}"; sleep 2 ;;
+            12) echo -e "${YELLOW}性能优化功能开发中...${NC}"; sleep 2 ;;
+            13) system_information ;;
+            14) echo -e "${YELLOW}安全设置功能开发中...${NC}"; sleep 2 ;;
+            15) echo -e "${YELLOW}备份恢复功能开发中...${NC}"; sleep 2 ;;
+            16) echo -e "${YELLOW}证书管理功能开发中...${NC}"; sleep 2 ;;
             i|I) install_system ;;
             u|U) uninstall_system ;;
             00) update_script ;;
             0) 
-                echo -e "${GREEN}感谢使用 VPS代理管理系统！${NC}"
+                echo -e "${GREEN}感谢使用 zhakil科技箱 VPS代理管理系统！${NC}"
                 exit 0 
                 ;;
             *) 
@@ -660,6 +688,6 @@ check_environment() {
 }
 
 # 启动脚本
-echo -e "${GREEN}正在启动 VPS代理管理系统...${NC}"
+echo -e "${GREEN}正在启动 zhakil科技箱 VPS代理管理系统...${NC}"
 check_environment
 main
