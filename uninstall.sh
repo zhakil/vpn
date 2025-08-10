@@ -98,23 +98,49 @@ backup_data() {
 stop_services() {
     log_info "停止所有Docker服务..."
     
-    if [[ -f docker-compose.yml ]]; then
-        docker-compose down --remove-orphans
+    # 检查docker-compose是否可用
+    if command -v docker-compose &> /dev/null && [[ -f docker-compose.yml ]]; then
+        log_info "使用docker-compose停止服务..."
+        docker-compose down --remove-orphans 2>/dev/null || true
+    elif command -v docker &> /dev/null && command -v docker-compose &> /dev/null && [[ -f docker-compose.yml ]]; then
+        log_info "使用docker compose停止服务..."
+        docker compose down --remove-orphans 2>/dev/null || true
+    else
+        log_warning "docker-compose未找到，尝试手动停止容器..."
     fi
     
-    # 强制停止所有相关容器
-    CONTAINERS=$(docker ps -q --filter "name=vps-*")
-    if [[ -n "$CONTAINERS" ]]; then
-        docker stop $CONTAINERS
-        docker rm $CONTAINERS
+    # 检查docker是否可用
+    if command -v docker &> /dev/null; then
+        # 强制停止所有相关容器
+        log_info "停止VPS代理相关容器..."
+        CONTAINERS=$(docker ps -q --filter "name=vps-*" 2>/dev/null)
+        if [[ -n "$CONTAINERS" ]]; then
+            docker stop $CONTAINERS 2>/dev/null || true
+            docker rm $CONTAINERS 2>/dev/null || true
+        fi
+        
+        # 停止可能的其他相关容器
+        OTHER_CONTAINERS=$(docker ps -aq --filter "name=vpn" --filter "name=proxy" --filter "name=v2ray" --filter "name=clash" --filter "name=hysteria" 2>/dev/null)
+        if [[ -n "$OTHER_CONTAINERS" ]]; then
+            docker stop $OTHER_CONTAINERS 2>/dev/null || true
+            docker rm $OTHER_CONTAINERS 2>/dev/null || true
+        fi
+    else
+        log_warning "Docker未安装或不可用，跳过容器清理"
     fi
     
-    log_success "服务已停止"
+    log_success "服务停止完成"
 }
 
 # 清理Docker资源
 cleanup_docker() {
     log_info "清理Docker资源..."
+    
+    # 检查Docker是否可用
+    if ! command -v docker &> /dev/null; then
+        log_warning "Docker未安装，跳过Docker资源清理"
+        return
+    fi
     
     # 删除相关镜像
     IMAGES=(
@@ -131,26 +157,41 @@ cleanup_docker() {
         "alpine:latest"
     )
     
+    log_info "清理Docker镜像..."
     for image in "${IMAGES[@]}"; do
-        if docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "$image"; then
+        if docker images --format "table {{.Repository}}:{{.Tag}}" 2>/dev/null | grep -q "$image"; then
+            log_info "删除镜像: $image"
             docker rmi "$image" 2>/dev/null || true
         fi
     done
     
     # 清理数据卷
-    VOLUMES=$(docker volume ls --format "{{.Name}}" | grep "vpn_\|vps-")
+    log_info "清理Docker数据卷..."
+    VOLUMES=$(docker volume ls --format "{{.Name}}" 2>/dev/null | grep -E "vpn_|vps-|proxy" || true)
     if [[ -n "$VOLUMES" ]]; then
-        docker volume rm $VOLUMES
+        echo "$VOLUMES" | while read volume; do
+            if [[ -n "$volume" ]]; then
+                log_info "删除数据卷: $volume"
+                docker volume rm "$volume" 2>/dev/null || true
+            fi
+        done
     fi
     
     # 清理网络
-    NETWORKS=$(docker network ls --format "{{.Name}}" | grep "vpn_\|vps-")
+    log_info "清理Docker网络..."
+    NETWORKS=$(docker network ls --format "{{.Name}}" 2>/dev/null | grep -E "vpn_|vps-|proxy" || true)
     if [[ -n "$NETWORKS" ]]; then
-        docker network rm $NETWORKS
+        echo "$NETWORKS" | while read network; do
+            if [[ -n "$network" && "$network" != "bridge" && "$network" != "host" && "$network" != "none" ]]; then
+                log_info "删除网络: $network"
+                docker network rm "$network" 2>/dev/null || true
+            fi
+        done
     fi
     
     # 清理未使用的资源
-    docker system prune -f
+    log_info "清理未使用的Docker资源..."
+    docker system prune -f 2>/dev/null || true
     
     log_success "Docker资源清理完成"
 }
@@ -182,37 +223,85 @@ cleanup_firewall() {
     log_success "防火墙规则清理完成"
 }
 
+# 强制清理模式（用于Docker不可用时）
+force_cleanup() {
+    log_info "启动强制清理模式..."
+    
+    # 尝试通过进程杀死相关服务
+    log_info "终止可能的代理进程..."
+    pkill -f "v2ray\|clash\|hysteria\|nginx" 2>/dev/null || true
+    
+    # 清理可能的端口占用
+    log_info "检查端口占用..."
+    for port in 80 443 8080 3000 9090 7890 7891 10001 36712; do
+        PID=$(lsof -ti:$port 2>/dev/null || true)
+        if [[ -n "$PID" ]]; then
+            log_info "终止占用端口$port的进程: $PID"
+            kill -9 $PID 2>/dev/null || true
+        fi
+    done
+    
+    # 清理可能的系统服务
+    for service in v2ray clash hysteria nginx; do
+        if systemctl is-active --quiet $service 2>/dev/null; then
+            log_info "停止系统服务: $service"
+            systemctl stop $service 2>/dev/null || true
+            systemctl disable $service 2>/dev/null || true
+        fi
+    done
+    
+    log_success "强制清理完成"
+}
+
 # 清理项目文件
 cleanup_files() {
     log_info "清理项目文件..."
     
     # 删除源码目录
     if [[ -d src ]]; then
+        log_info "删除源码目录..."
         rm -rf src
     fi
     
     # 删除配置目录
     if [[ -d configs ]]; then
+        log_info "删除配置目录..."
         rm -rf configs
     fi
     
     # 删除协议配置
     if [[ -d protocol-configs ]]; then
+        log_info "删除协议配置..."
         rm -rf protocol-configs
     fi
     
     # 删除SSL证书
     if [[ -d ssl ]]; then
+        log_info "删除SSL证书..."
         rm -rf ssl
     fi
     
     # 删除脚本文件
     if [[ -d scripts ]]; then
+        log_info "删除脚本文件..."
         rm -rf scripts
+    fi
+    
+    # 删除数据目录
+    if [[ -d data ]]; then
+        log_info "删除数据目录..."
+        rm -rf data
+    fi
+    
+    # 删除日志目录
+    if [[ -d logs ]]; then
+        log_info "删除日志目录..."
+        rm -rf logs
     fi
     
     # 删除Docker compose文件
     if [[ -f docker-compose.yml ]]; then
+        log_info "删除docker-compose.yml..."
         rm -f docker-compose.yml
     fi
     
@@ -222,20 +311,24 @@ cleanup_files() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             rm -f .env
+            log_info "已删除.env文件"
+        else
+            log_info "保留.env文件"
         fi
     fi
     
     # 删除安装脚本
-    if [[ -f deploy.sh ]]; then
-        rm -f deploy.sh
-    fi
+    SCRIPTS_TO_DELETE=("deploy.sh" "install.sh" "install-lite.sh" "manage.sh")
+    for script in "${SCRIPTS_TO_DELETE[@]}"; do
+        if [[ -f "$script" ]]; then
+            log_info "删除脚本: $script"
+            rm -f "$script"
+        fi
+    done
     
-    if [[ -f install.sh ]]; then
-        rm -f install.sh
-    fi
-    
-    if [[ -f install-lite.sh ]]; then
-        rm -f install-lite.sh
+    # 删除可能的备份文件
+    if [[ -d backup-* ]]; then
+        log_info "发现备份目录，保留备份文件"
     fi
     
     log_success "项目文件清理完成"
@@ -314,8 +407,16 @@ main() {
     check_root
     confirm_uninstall
     backup_data "$1"
-    stop_services
-    cleanup_docker
+    
+    # 检查Docker状态并选择清理方式
+    if ! command -v docker &> /dev/null; then
+        log_warning "检测到Docker未安装，将使用强制清理模式"
+        force_cleanup
+    else
+        stop_services
+        cleanup_docker
+    fi
+    
     cleanup_firewall
     cleanup_files
     cleanup_system
