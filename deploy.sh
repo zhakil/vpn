@@ -258,6 +258,61 @@ start_services() {
     log_success "服务启动完成"
 }
 
+# 创建快捷命令
+create_shortcut_command() {
+    log_info "创建快捷命令..."
+    
+    # 创建全局管理脚本
+    cp manage.sh /usr/local/bin/zhakil-manage
+    chmod +x /usr/local/bin/zhakil-manage
+    
+    # 创建快捷命令脚本
+    cat > /usr/local/bin/zhakil << 'EOF'
+#!/bin/bash
+# VPS代理管理系统快捷命令
+# 输入 zhakil 即可进入管理界面
+
+INSTALL_DIR="/opt/vpn-proxy"
+
+# 检查安装目录
+if [[ -d "$INSTALL_DIR" ]]; then
+    cd "$INSTALL_DIR"
+    /usr/local/bin/zhakil-manage
+else
+    # 在当前目录查找
+    if [[ -f "./manage.sh" ]]; then
+        ./manage.sh
+    else
+        echo -e "\033[0;31m错误: 未找到VPS代理管理系统\033[0m"
+        echo -e "\033[1;33m请确保系统已正确安装\033[0m"
+        exit 1
+    fi
+fi
+EOF
+
+    chmod +x /usr/local/bin/zhakil
+    
+    # 创建软链接到常用路径
+    ln -sf /usr/local/bin/zhakil /usr/bin/zhakil
+    
+    log_success "快捷命令创建完成"
+}
+
+# 移动项目到标准位置
+move_to_standard_location() {
+    local INSTALL_DIR="/opt/vpn-proxy"
+    
+    log_info "移动项目到标准位置..."
+    
+    if [[ "$PWD" != "$INSTALL_DIR" ]]; then
+        mkdir -p "$INSTALL_DIR"
+        cp -r * "$INSTALL_DIR/"
+        cd "$INSTALL_DIR"
+    fi
+    
+    log_success "项目已移动到 $INSTALL_DIR"
+}
+
 # 显示部署结果
 show_result() {
     local SERVER_IP=$(curl -s ifconfig.me)
@@ -276,13 +331,25 @@ show_result() {
     echo -e "  Grafana用户: ${GREEN}admin${NC}"
     echo -e "  Grafana密码: ${GREEN}$(grep GRAFANA_PASSWORD .env | cut -d'=' -f2)${NC}"
     echo
-    echo -e "${BLUE}常用命令:${NC}"
+    echo -e "${BLUE}快捷命令:${NC}"
+    echo -e "  管理界面: ${GREEN}zhakil${NC}"
     echo -e "  查看状态: ${YELLOW}docker-compose ps${NC}"
     echo -e "  查看日志: ${YELLOW}docker-compose logs -f${NC}"
     echo -e "  重启服务: ${YELLOW}docker-compose restart${NC}"
     echo -e "  停止服务: ${YELLOW}docker-compose down${NC}"
     echo
     log_warning "请保存好.env文件中的密码信息！"
+    echo
+    echo -e "${GREEN}现在你可以在任何地方输入 'zhakil' 进入管理界面！${NC}"
+    
+    # 询问是否立即进入管理界面
+    echo
+    read -p "$(echo -e "${BLUE}是否现在就进入管理界面? [Y/n]: ${NC}")" -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$|^$ ]]; then
+        sleep 2
+        zhakil
+    fi
 }
 
 # 主安装流程
@@ -291,6 +358,7 @@ main() {
     echo -e "${BLUE}"
     echo "========================================"
     echo "     VPS代理管理系统 - 一键部署"
+    echo "           zhakil科技箱 v4.0.0"
     echo "========================================"
     echo -e "${NC}"
     
@@ -306,6 +374,8 @@ main() {
     pull_images
     install_dependencies
     start_services
+    move_to_standard_location
+    create_shortcut_command
     show_result
 }
 
